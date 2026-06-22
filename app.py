@@ -508,36 +508,91 @@ st.markdown(
             font-weight: 700;
         }
 
+        /* Dark theme only: keep sidebar and all control text readable. */
         @media (prefers-color-scheme: dark) {
+            [data-testid="stSidebar"],
+            [data-testid="stSidebar"] *,
+            [data-testid="stSidebarNav"] *,
+            [data-testid="stSidebarUserContent"] * {
+                color: #f3f4f6 !important;
+                -webkit-text-fill-color: #f3f4f6 !important;
+            }
+
             div[data-testid="stNumberInput"] label p,
             div[data-testid="stNumberInput"] input,
             div[data-testid="stNumberInput"] button,
             div[data-testid="stNumberInput"] [data-baseweb="input"] *,
-            div[data-testid="stNumberInput"] [data-testid="InputInstructions"] {
+            div[data-testid="stNumberInput"] [data-testid="InputInstructions"],
+            div[data-testid="stSelectbox"] label p,
+            div[data-testid="stSelectbox"] [data-baseweb="select"] *,
+            div[data-testid="stSlider"] label p,
+            div[data-testid="stSlider"] [data-testid="stTickBar"] *,
+            div[data-testid="stSlider"] [role="slider"] {
                 color: #f3f4f6 !important;
                 -webkit-text-fill-color: #f3f4f6 !important;
+            }
+
+            div[data-testid="stNumberInput"] [data-baseweb="input"],
+            div[data-testid="stSelectbox"] [data-baseweb="select"] > div {
+                background: #161b22 !important;
+                border-color: #30363d !important;
             }
 
             div[data-testid="stButton"] > button {
                 color: #f3f4f6 !important;
                 -webkit-text-fill-color: #f3f4f6 !important;
+                background: #111827 !important;
+                border-color: #374151 !important;
             }
         }
 
-        @media (prefers-color-scheme: light) {
-            div[data-testid="stNumberInput"] label p,
-            div[data-testid="stNumberInput"] input,
-            div[data-testid="stNumberInput"] button,
-            div[data-testid="stNumberInput"] [data-baseweb="input"] *,
-            div[data-testid="stNumberInput"] [data-testid="InputInstructions"] {
-                color: #111827 !important;
-                -webkit-text-fill-color: #111827 !important;
-            }
+        /* Streamlit theme-toggle dark mode support (not only OS dark preference). */
+        .stApp[data-theme="dark"] [data-testid="stSidebar"],
+        .stApp[data-theme="dark"] [data-testid="stSidebar"] *,
+        html[data-theme="dark"] [data-testid="stSidebar"],
+        html[data-theme="dark"] [data-testid="stSidebar"] * {
+            color: #f3f4f6 !important;
+            -webkit-text-fill-color: #f3f4f6 !important;
+        }
 
-            div[data-testid="stButton"] > button {
-                color: #111827 !important;
-                -webkit-text-fill-color: #111827 !important;
-            }
+        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] label p,
+        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] input,
+        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] button,
+        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] [data-baseweb="input"] *,
+        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] [data-testid="InputInstructions"],
+        .stApp[data-theme="dark"] div[data-testid="stSelectbox"] label p,
+        .stApp[data-theme="dark"] div[data-testid="stSelectbox"] [data-baseweb="select"] *,
+        .stApp[data-theme="dark"] div[data-testid="stSlider"] label p,
+        .stApp[data-theme="dark"] div[data-testid="stSlider"] [data-testid="stTickBar"] *,
+        .stApp[data-theme="dark"] div[data-testid="stSlider"] [role="slider"],
+        html[data-theme="dark"] div[data-testid="stNumberInput"] label p,
+        html[data-theme="dark"] div[data-testid="stNumberInput"] input,
+        html[data-theme="dark"] div[data-testid="stNumberInput"] button,
+        html[data-theme="dark"] div[data-testid="stNumberInput"] [data-baseweb="input"] *,
+        html[data-theme="dark"] div[data-testid="stNumberInput"] [data-testid="InputInstructions"],
+        html[data-theme="dark"] div[data-testid="stSelectbox"] label p,
+        html[data-theme="dark"] div[data-testid="stSelectbox"] [data-baseweb="select"] *,
+        html[data-theme="dark"] div[data-testid="stSlider"] label p,
+        html[data-theme="dark"] div[data-testid="stSlider"] [data-testid="stTickBar"] *,
+        html[data-theme="dark"] div[data-testid="stSlider"] [role="slider"] {
+            color: #f3f4f6 !important;
+            -webkit-text-fill-color: #f3f4f6 !important;
+        }
+
+        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] [data-baseweb="input"],
+        .stApp[data-theme="dark"] div[data-testid="stSelectbox"] [data-baseweb="select"] > div,
+        html[data-theme="dark"] div[data-testid="stNumberInput"] [data-baseweb="input"],
+        html[data-theme="dark"] div[data-testid="stSelectbox"] [data-baseweb="select"] > div {
+            background: #161b22 !important;
+            border-color: #30363d !important;
+        }
+
+        .stApp[data-theme="dark"] div[data-testid="stButton"] > button,
+        html[data-theme="dark"] div[data-testid="stButton"] > button {
+            color: #f3f4f6 !important;
+            -webkit-text-fill-color: #f3f4f6 !important;
+            background: #111827 !important;
+            border-color: #374151 !important;
         }
 
         @media (max-width: 900px) {
