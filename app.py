@@ -371,11 +371,11 @@ st.markdown(
     <style>
         :root {
             --bmw-blue: #0066b1;
-            --bmw-bg: #f4f7fb;
-            --bmw-text: #111827;
-            --bmw-muted: #4b5563;
-            --bmw-card-bg: #ffffff;
-            --bmw-card-border: #d8e0ea;
+            --bmw-bg: var(--background-color, #f4f7fb);
+            --bmw-text: var(--text-color, #111827);
+            --bmw-muted: color-mix(in srgb, var(--bmw-text) 68%, transparent);
+            --bmw-card-bg: var(--secondary-background-color, #ffffff);
+            --bmw-card-border: color-mix(in srgb, var(--bmw-text) 16%, transparent);
             --bmw-hero-start: #ffffff;
             --bmw-hero-end: #edf4fb;
             --bmw-shadow: rgba(17, 24, 39, 0.08);
@@ -434,12 +434,53 @@ st.markdown(
             font-weight: 600;
         }
 
+        p, li, label, span, div {
+            color: inherit;
+        }
+
+        div[data-testid="stMarkdownContainer"] p,
+        div[data-testid="stMarkdownContainer"] li,
+        div[data-testid="stText"] {
+            color: var(--bmw-text);
+        }
+
         div[data-testid="stMetric"] {
             background: var(--bmw-card-bg);
             border: 1px solid var(--bmw-card-border);
             padding: 1rem;
             border-radius: 8px;
             box-shadow: 0 4px 14px var(--bmw-card-shadow);
+        }
+
+        div[data-testid="stMetricLabel"] p {
+            color: var(--bmw-muted) !important;
+            opacity: 1 !important;
+        }
+
+        div[data-testid="stMetricValue"] {
+            color: var(--bmw-text) !important;
+        }
+
+        div[data-baseweb="input"] input,
+        div[data-baseweb="input"] textarea {
+            color: var(--bmw-text) !important;
+        }
+
+        div[data-baseweb="input"] {
+            background: var(--bmw-card-bg) !important;
+            border-color: var(--bmw-card-border) !important;
+        }
+
+        div[data-baseweb="select"] > div {
+            color: var(--bmw-text) !important;
+            background: var(--bmw-card-bg) !important;
+            border-color: var(--bmw-card-border) !important;
+        }
+
+        div[data-testid="stExpander"] details,
+        div[data-testid="stExpander"] summary,
+        div[data-testid="stExpander"] * {
+            color: var(--bmw-text) !important;
         }
 
         .section-label {
