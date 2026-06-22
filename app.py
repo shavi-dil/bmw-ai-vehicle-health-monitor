@@ -74,6 +74,148 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown(
+    """
+    <style>
+        @media (prefers-color-scheme: dark) {
+            .stApp {
+                background-color: #0b0f19 !important;
+                color: #f9fafb !important;
+            }
+
+            [data-testid="stSidebar"] {
+                background-color: #111827 !important;
+            }
+
+            [data-testid="stSidebar"] * {
+                color: #f9fafb !important;
+            }
+
+            [data-testid="stMarkdownContainer"],
+            [data-testid="stMarkdownContainer"] * {
+                color: #f9fafb !important;
+            }
+
+            [data-testid="stNumberInput"] input {
+                background-color: #1f2937 !important;
+                color: #ffffff !important;
+                border: 1px solid #4b5563 !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+
+            [data-testid="stNumberInput"] button {
+                background-color: #1f2937 !important;
+                color: #ffffff !important;
+                border: 1px solid #4b5563 !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+
+            [data-testid="stSelectbox"] * {
+                background-color: #1f2937 !important;
+                color: #ffffff !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+
+            [data-testid="stButton"] button {
+                background-color: #0f4c81 !important;
+                color: #ffffff !important;
+                border: 1px solid #60a5fa !important;
+                font-weight: 700 !important;
+                -webkit-text-fill-color: #ffffff !important;
+            }
+
+            [data-testid="stButton"] button:hover {
+                background-color: #1565a9 !important;
+                color: #ffffff !important;
+            }
+
+            div[data-testid="stVerticalBlock"] {
+                color: #f9fafb !important;
+            }
+
+            .stMetric,
+            div[data-testid="stMetric"],
+            div[data-testid="stMetric"] * {
+                color: #f9fafb !important;
+            }
+        }
+
+        /* Streamlit theme toggle dark-mode support for Cloud apps */
+        .stApp[data-theme="dark"],
+        html[data-theme="dark"] .stApp {
+            background-color: #0b0f19 !important;
+            color: #f9fafb !important;
+        }
+
+        .stApp[data-theme="dark"] [data-testid="stSidebar"],
+        html[data-theme="dark"] [data-testid="stSidebar"] {
+            background-color: #111827 !important;
+        }
+
+        .stApp[data-theme="dark"] [data-testid="stSidebar"] *,
+        html[data-theme="dark"] [data-testid="stSidebar"] * {
+            color: #f9fafb !important;
+            -webkit-text-fill-color: #f9fafb !important;
+        }
+
+        .stApp[data-theme="dark"] [data-testid="stMarkdownContainer"],
+        .stApp[data-theme="dark"] [data-testid="stMarkdownContainer"] *,
+        html[data-theme="dark"] [data-testid="stMarkdownContainer"],
+        html[data-theme="dark"] [data-testid="stMarkdownContainer"] * {
+            color: #f9fafb !important;
+        }
+
+        .stApp[data-theme="dark"] [data-testid="stNumberInput"] input,
+        html[data-theme="dark"] [data-testid="stNumberInput"] input {
+            background-color: #1f2937 !important;
+            color: #ffffff !important;
+            border: 1px solid #4b5563 !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+
+        .stApp[data-theme="dark"] [data-testid="stNumberInput"] button,
+        html[data-theme="dark"] [data-testid="stNumberInput"] button {
+            background-color: #1f2937 !important;
+            color: #ffffff !important;
+            border: 1px solid #4b5563 !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+
+        .stApp[data-theme="dark"] [data-testid="stSelectbox"] *,
+        html[data-theme="dark"] [data-testid="stSelectbox"] * {
+            background-color: #1f2937 !important;
+            color: #ffffff !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+
+        .stApp[data-theme="dark"] [data-testid="stButton"] button,
+        html[data-theme="dark"] [data-testid="stButton"] button {
+            background-color: #0f4c81 !important;
+            color: #ffffff !important;
+            border: 1px solid #60a5fa !important;
+            font-weight: 700 !important;
+            -webkit-text-fill-color: #ffffff !important;
+        }
+
+        .stApp[data-theme="dark"] [data-testid="stButton"] button:hover,
+        html[data-theme="dark"] [data-testid="stButton"] button:hover {
+            background-color: #1565a9 !important;
+            color: #ffffff !important;
+        }
+
+        .stApp[data-theme="dark"] .stMetric,
+        .stApp[data-theme="dark"] div[data-testid="stMetric"],
+        .stApp[data-theme="dark"] div[data-testid="stMetric"] *,
+        html[data-theme="dark"] .stMetric,
+        html[data-theme="dark"] div[data-testid="stMetric"],
+        html[data-theme="dark"] div[data-testid="stMetric"] * {
+            color: #f9fafb !important;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.title("BMW AI Predictive Maintenance System")
 
 
@@ -506,93 +648,6 @@ st.markdown(
             width: 100%;
             min-height: 48px;
             font-weight: 700;
-        }
-
-        /* Dark theme only: keep sidebar and all control text readable. */
-        @media (prefers-color-scheme: dark) {
-            [data-testid="stSidebar"],
-            [data-testid="stSidebar"] *,
-            [data-testid="stSidebarNav"] *,
-            [data-testid="stSidebarUserContent"] * {
-                color: #f3f4f6 !important;
-                -webkit-text-fill-color: #f3f4f6 !important;
-            }
-
-            div[data-testid="stNumberInput"] label p,
-            div[data-testid="stNumberInput"] input,
-            div[data-testid="stNumberInput"] button,
-            div[data-testid="stNumberInput"] [data-baseweb="input"] *,
-            div[data-testid="stNumberInput"] [data-testid="InputInstructions"],
-            div[data-testid="stSelectbox"] label p,
-            div[data-testid="stSelectbox"] [data-baseweb="select"] *,
-            div[data-testid="stSlider"] label p,
-            div[data-testid="stSlider"] [data-testid="stTickBar"] *,
-            div[data-testid="stSlider"] [role="slider"] {
-                color: #f3f4f6 !important;
-                -webkit-text-fill-color: #f3f4f6 !important;
-            }
-
-            div[data-testid="stNumberInput"] [data-baseweb="input"],
-            div[data-testid="stSelectbox"] [data-baseweb="select"] > div {
-                background: #161b22 !important;
-                border-color: #30363d !important;
-            }
-
-            div[data-testid="stButton"] > button {
-                color: #f3f4f6 !important;
-                -webkit-text-fill-color: #f3f4f6 !important;
-                background: #111827 !important;
-                border-color: #374151 !important;
-            }
-        }
-
-        /* Streamlit theme-toggle dark mode support (not only OS dark preference). */
-        .stApp[data-theme="dark"] [data-testid="stSidebar"],
-        .stApp[data-theme="dark"] [data-testid="stSidebar"] *,
-        html[data-theme="dark"] [data-testid="stSidebar"],
-        html[data-theme="dark"] [data-testid="stSidebar"] * {
-            color: #f3f4f6 !important;
-            -webkit-text-fill-color: #f3f4f6 !important;
-        }
-
-        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] label p,
-        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] input,
-        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] button,
-        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] [data-baseweb="input"] *,
-        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] [data-testid="InputInstructions"],
-        .stApp[data-theme="dark"] div[data-testid="stSelectbox"] label p,
-        .stApp[data-theme="dark"] div[data-testid="stSelectbox"] [data-baseweb="select"] *,
-        .stApp[data-theme="dark"] div[data-testid="stSlider"] label p,
-        .stApp[data-theme="dark"] div[data-testid="stSlider"] [data-testid="stTickBar"] *,
-        .stApp[data-theme="dark"] div[data-testid="stSlider"] [role="slider"],
-        html[data-theme="dark"] div[data-testid="stNumberInput"] label p,
-        html[data-theme="dark"] div[data-testid="stNumberInput"] input,
-        html[data-theme="dark"] div[data-testid="stNumberInput"] button,
-        html[data-theme="dark"] div[data-testid="stNumberInput"] [data-baseweb="input"] *,
-        html[data-theme="dark"] div[data-testid="stNumberInput"] [data-testid="InputInstructions"],
-        html[data-theme="dark"] div[data-testid="stSelectbox"] label p,
-        html[data-theme="dark"] div[data-testid="stSelectbox"] [data-baseweb="select"] *,
-        html[data-theme="dark"] div[data-testid="stSlider"] label p,
-        html[data-theme="dark"] div[data-testid="stSlider"] [data-testid="stTickBar"] *,
-        html[data-theme="dark"] div[data-testid="stSlider"] [role="slider"] {
-            color: #f3f4f6 !important;
-            -webkit-text-fill-color: #f3f4f6 !important;
-        }
-
-        .stApp[data-theme="dark"] div[data-testid="stNumberInput"] [data-baseweb="input"],
-        .stApp[data-theme="dark"] div[data-testid="stSelectbox"] [data-baseweb="select"] > div,
-        html[data-theme="dark"] div[data-testid="stNumberInput"] [data-baseweb="input"],
-        html[data-theme="dark"] div[data-testid="stSelectbox"] [data-baseweb="select"] > div {
-            background: #161b22 !important;
-            border-color: #30363d !important;
-        }
-
-        .stApp[data-theme="dark"] div[data-testid="stButton"] > button,
-        html[data-theme="dark"] div[data-testid="stButton"] > button {
-            color: #f3f4f6 !important;
-            -webkit-text-fill-color: #f3f4f6 !important;
-            background: #111827 !important;
-            border-color: #374151 !important;
         }
 
         @media (max-width: 900px) {
