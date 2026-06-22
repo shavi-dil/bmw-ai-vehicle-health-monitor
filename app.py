@@ -373,7 +373,27 @@ st.markdown(
             --bmw-blue: #0066b1;
             --bmw-bg: #f4f7fb;
             --bmw-text: #111827;
+            --bmw-muted: #4b5563;
+            --bmw-card-bg: #ffffff;
             --bmw-card-border: #d8e0ea;
+            --bmw-hero-start: #ffffff;
+            --bmw-hero-end: #edf4fb;
+            --bmw-shadow: rgba(17, 24, 39, 0.08);
+            --bmw-card-shadow: rgba(17, 24, 39, 0.05);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bmw-bg: #0e1117;
+                --bmw-text: #f3f4f6;
+                --bmw-muted: #c9d1d9;
+                --bmw-card-bg: #161b22;
+                --bmw-card-border: #30363d;
+                --bmw-hero-start: #111827;
+                --bmw-hero-end: #1f2937;
+                --bmw-shadow: rgba(0, 0, 0, 0.28);
+                --bmw-card-shadow: rgba(0, 0, 0, 0.2);
+            }
         }
 
         .stApp {
@@ -388,8 +408,8 @@ st.markdown(
         .bmw-hero {
             border-left: 6px solid var(--bmw-blue);
             padding: 1.2rem 1.4rem;
-            background: linear-gradient(90deg, #ffffff 0%, #edf4fb 100%);
-            box-shadow: 0 8px 22px rgba(17, 24, 39, 0.08);
+            background: linear-gradient(90deg, var(--bmw-hero-start) 0%, var(--bmw-hero-end) 100%);
+            box-shadow: 0 8px 22px var(--bmw-shadow);
             margin-bottom: 1.3rem;
             border-radius: 8px;
         }
@@ -404,26 +424,26 @@ st.markdown(
 
         .bmw-hero h1 {
             margin: 0.15rem 0 0.2rem;
-            color: #111827;
+            color: var(--bmw-text);
             font-size: 2rem;
             line-height: 1.15;
         }
 
         .bmw-version {
-            color: #4b5563;
+            color: var(--bmw-muted);
             font-weight: 600;
         }
 
         div[data-testid="stMetric"] {
-            background: #ffffff;
+            background: var(--bmw-card-bg);
             border: 1px solid var(--bmw-card-border);
             padding: 1rem;
             border-radius: 8px;
-            box-shadow: 0 4px 14px rgba(17, 24, 39, 0.05);
+            box-shadow: 0 4px 14px var(--bmw-card-shadow);
         }
 
         .section-label {
-            color: #111827;
+            color: var(--bmw-text);
             font-size: 1rem;
             font-weight: 800;
             margin: 0.6rem 0 0.5rem;
