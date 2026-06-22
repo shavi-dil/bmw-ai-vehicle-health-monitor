@@ -508,6 +508,38 @@ st.markdown(
             font-weight: 700;
         }
 
+        @media (prefers-color-scheme: dark) {
+            div[data-testid="stNumberInput"] label p,
+            div[data-testid="stNumberInput"] input,
+            div[data-testid="stNumberInput"] button,
+            div[data-testid="stNumberInput"] [data-baseweb="input"] *,
+            div[data-testid="stNumberInput"] [data-testid="InputInstructions"] {
+                color: #f3f4f6 !important;
+                -webkit-text-fill-color: #f3f4f6 !important;
+            }
+
+            div[data-testid="stButton"] > button {
+                color: #f3f4f6 !important;
+                -webkit-text-fill-color: #f3f4f6 !important;
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            div[data-testid="stNumberInput"] label p,
+            div[data-testid="stNumberInput"] input,
+            div[data-testid="stNumberInput"] button,
+            div[data-testid="stNumberInput"] [data-baseweb="input"] *,
+            div[data-testid="stNumberInput"] [data-testid="InputInstructions"] {
+                color: #111827 !important;
+                -webkit-text-fill-color: #111827 !important;
+            }
+
+            div[data-testid="stButton"] > button {
+                color: #111827 !important;
+                -webkit-text-fill-color: #111827 !important;
+            }
+        }
+
         @media (max-width: 900px) {
             .bmw-hero {
                 padding: 1rem;
