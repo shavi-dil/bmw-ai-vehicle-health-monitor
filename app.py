@@ -1,5 +1,6 @@
 import pandas as pd
 import joblib
+import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -168,6 +169,55 @@ def get_shap_explainability(model, vehicle_data, prediction):
         return None
 
 
+def build_gauge(title, value, min_value, max_value, units="", threshold=None):
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=value,
+            title={"text": title},
+            number={"suffix": units},
+            gauge={
+                "axis": {"range": [min_value, max_value]},
+                "bar": {"color": "#0066b1"},
+                "steps": [
+                    {"range": [min_value, (min_value + max_value) / 2], "color": "#e9f2fb"},
+                    {"range": [(min_value + max_value) / 2, max_value], "color": "#c5d9ff"},
+                ],
+            },
+        )
+    )
+    if threshold is not None and min_value < threshold < max_value:
+        fig.add_shape(
+            type="line",
+            x0=0.5,
+            x1=0.5,
+            y0=0,
+            y1=1,
+            xref="paper",
+            yref="paper",
+            line={"color": "#ff5a5a", "width": 3, "dash": "dash"},
+        )
+    fig.update_layout(margin={"t": 35, "b": 0, "l": 0, "r": 0}, height=260)
+    return fig
+
+
+def get_engineering_explanation(values, thresholds):
+    explanations = []
+    if values["battery_voltage"] < thresholds["battery_voltage"]:
+        explanations.append("Battery voltage is below the BMW 3 Series operating threshold.")
+
+    if values["vehicle_age"] > 5:
+        explanations.append("Vehicle age exceeds recommended battery replacement cycle.")
+
+    if values["last_service_km"] > thresholds["last_service_km"]:
+        explanations.append("Predicted battery degradation risk is elevated.")
+
+    if not explanations:
+        explanations.append("System sensors are within normal operating ranges for this vehicle.")
+
+    return explanations
+
+
 def format_probability_table(model, vehicle_data):
     probabilities = model.predict_proba(vehicle_data)[0]
     probability_table = pd.DataFrame(
@@ -295,7 +345,7 @@ with status_col:
     st.metric("Diagnostic Mode", "Predictive AI")
     st.metric("Model Status", "Loaded")
 
-if st.button("Predict", type="primary", use_container_width=True):
+if st.button("Run AI Diagnostic"):
     values = {
         "mileage": mileage,
         "vehicle_age": vehicle_age,
@@ -316,6 +366,7 @@ if st.button("Predict", type="primary", use_container_width=True):
     health_score = calculate_health_score(values, thresholds)
     risk = calculate_risk_level(health_score)
     recommendations = get_recommendations(values, thresholds)
+    explanation_lines = get_engineering_explanation(values, thresholds)
     explainability = get_shap_explainability(model, vehicle_data, prediction)
     explanation_source = "SHAP feature attribution"
 
@@ -323,31 +374,40 @@ if st.button("Predict", type="primary", use_container_width=True):
         explainability = get_explainability(values, thresholds)
         explanation_source = "Engineering threshold attribution"
 
+    battery_health = int(max(0, min(100, (battery_voltage - 10.0) / 5.0 * 100)))
+    engine_temp_value = engine_temp
+
     st.markdown('<div class="section-label">Prediction Result</div>', unsafe_allow_html=True)
     result_col, health_col, risk_col = st.columns(3)
 
     with result_col:
         st.success(f"Predicted Fault: {prediction}")
+        st.metric("Vehicle Health Score", f"{health_score}/100")
 
     with health_col:
-        st.metric(
-            label="Vehicle Health Score",
-            value=f"{health_score}/100",
+        st.metric("Battery Health", f"{battery_health}%")
+        st.plotly_chart(
+            build_gauge("Battery Health", battery_health, 0, 100, units="%"),
+            use_container_width=True,
         )
-        st.progress(health_score / 100)
 
     with risk_col:
-        if risk == "High Risk":
-            st.error(f"Risk Level: {risk}")
-        elif risk == "Medium Risk":
-            st.warning(f"Risk Level: {risk}")
-        else:
-            st.info(f"Risk Level: {risk}")
+        st.metric("Engine Temp Gauge", f"{engine_temp_value}°C")
+        st.plotly_chart(
+            build_gauge("Engine Temperature", engine_temp_value, 60, 130, units="°C", threshold=thresholds["engine_temp"]),
+            use_container_width=True,
+        )
 
+    st.markdown("---")
     probability_col, recommendation_col = st.columns([1.05, 0.95])
 
     with probability_col:
         st.subheader("Fault Probability")
+        prob_metrics = probability_table.head(4)
+        cols = st.columns(len(prob_metrics))
+        for idx, (_, row) in enumerate(prob_metrics.iterrows()):
+            cols[idx].metric(row["Fault Type"], row["Probability %"])
+
         st.dataframe(
             probability_table[["Fault Type", "Probability %"]],
             hide_index=True,
@@ -355,13 +415,24 @@ if st.button("Predict", type="primary", use_container_width=True):
         )
 
     with recommendation_col:
-        st.subheader("AI Engineering Recommendations")
+        st.subheader("AI Maintenance Recommendations")
         for item in recommendations:
-            st.write("OK", item)
+            st.write(f"✓ {item}")
+        st.markdown("---")
+        st.subheader("Engineering Explanation")
+        for line in explanation_lines:
+            st.write(line)
 
-    st.subheader("SHAP Explainable AI")
+    st.markdown("---")
+    st.subheader("Explainable AI Attribution")
     st.caption(explanation_source)
     st.write("Prediction caused by:")
     for feature, contribution in explainability:
         sign = "+" if contribution >= 0 else ""
         st.write(f"{feature} ({sign}{contribution}%)")
+
+    st.markdown("---")
+    st.plotly_chart(
+        build_gauge("Vehicle Health Gauge", health_score, 0, 100, units="%"),
+        use_container_width=True,
+    )
