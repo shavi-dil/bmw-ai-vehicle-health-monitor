@@ -5,7 +5,7 @@ from sklearn.metrics import accuracy_score, classification_report
 import joblib
 
 # Load dataset
-df = pd.read_csv("data/bmw_vehicle_sensor_data.csv")
+df = pd.read_csv("bmw_vehicle_sensor_data.csv")
 
 # Features
 X = df.drop(["fault_type", "risk_level"], axis=1)
@@ -40,6 +40,6 @@ print("\nClassification Report:")
 print(classification_report(y_test, predictions))
 
 # Save model
-joblib.dump(model, "models/fault_prediction_model.pkl")
+joblib.dump(model, "fault_prediction_model.pkl")
 
-print("\nModel saved successfully!")
+print("\nModel saved to fault_prediction_model.pkl")
