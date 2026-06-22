@@ -8,38 +8,62 @@ MODEL_THRESHOLDS = {
     "BMW 3 Series": {
         "battery_voltage": 12.0,
         "engine_temp": 100,
+        "coolant_temp": 95,
+        "oil_pressure": 2.0,
         "last_service_km": 20000,
         "brake_pad_thickness": 4.0,
+        "brake_sensor": 35,
+        "battery_soh": 70,
     },
     "BMW M3": {
         "battery_voltage": 12.1,
         "engine_temp": 108,
+        "coolant_temp": 100,
+        "oil_pressure": 2.2,
         "last_service_km": 15000,
         "brake_pad_thickness": 4.5,
+        "brake_sensor": 35,
+        "battery_soh": 72,
     },
     "BMW X5": {
         "battery_voltage": 12.0,
         "engine_temp": 103,
+        "coolant_temp": 97,
+        "oil_pressure": 2.0,
         "last_service_km": 18000,
         "brake_pad_thickness": 4.2,
+        "brake_sensor": 35,
+        "battery_soh": 70,
     },
     "BMW 5 Series": {
         "battery_voltage": 12.0,
         "engine_temp": 102,
+        "coolant_temp": 96,
+        "oil_pressure": 2.0,
         "last_service_km": 18000,
         "brake_pad_thickness": 4.2,
+        "brake_sensor": 35,
+        "battery_soh": 70,
     },
     "BMW i4": {
         "battery_voltage": 12.3,
         "engine_temp": 98,
+        "coolant_temp": 92,
+        "oil_pressure": 1.8,
         "last_service_km": 24000,
         "brake_pad_thickness": 4.0,
+        "brake_sensor": 35,
+        "battery_soh": 75,
     },
     "BMW M5": {
         "battery_voltage": 12.2,
         "engine_temp": 110,
+        "coolant_temp": 102,
+        "oil_pressure": 2.3,
         "last_service_km": 14000,
         "brake_pad_thickness": 4.8,
+        "brake_sensor": 38,
+        "battery_soh": 72,
     },
 }
 
@@ -62,16 +86,34 @@ def calculate_health_score(values, thresholds):
     health_score = 100
 
     if values["battery_voltage"] < thresholds["battery_voltage"]:
-        health_score -= 15
+        health_score -= 10
+
+    if values["battery_soh"] < thresholds["battery_soh"]:
+        health_score -= 12
 
     if values["engine_temp"] > thresholds["engine_temp"]:
-        health_score -= 10
+        health_score -= 8
+
+    if values["coolant_temp"] > thresholds["coolant_temp"]:
+        health_score -= 8
+
+    if values["oil_pressure"] < thresholds["oil_pressure"]:
+        health_score -= 12
 
     if values["last_service_km"] > thresholds["last_service_km"]:
-        health_score -= 10
+        health_score -= 8
 
     if values["brake_pad_thickness"] < thresholds["brake_pad_thickness"]:
-        health_score -= 15
+        health_score -= 10
+
+    if values["brake_sensor"] < thresholds["brake_sensor"]:
+        health_score -= 8
+
+    if values["driving_behavior_score"] < 50:
+        health_score -= 5
+
+    if values["maintenance_history_score"] < 50:
+        health_score -= 5
 
     return max(0, health_score)
 
@@ -86,25 +128,49 @@ def calculate_risk_level(health_score):
     return "High Risk"
 
 
-def get_recommendations(values, thresholds):
-    recommendations = []
-
-    if values["battery_voltage"] < thresholds["battery_voltage"]:
-        recommendations.append("Inspect battery condition.")
-
-    if values["engine_temp"] > thresholds["engine_temp"]:
-        recommendations.append("Check cooling system.")
-
-    if values["brake_pad_thickness"] < thresholds["brake_pad_thickness"]:
-        recommendations.append("Replace brake pads.")
-
-    if values["last_service_km"] > thresholds["last_service_km"]:
-        recommendations.append("Schedule maintenance service.")
-
-    if not recommendations:
-        recommendations.append("No immediate service action required.")
-
-    return recommendations
+def get_recommendations(prediction, values, thresholds):
+    lookup = {
+        "Battery Degradation": [
+            "Inspect battery terminals and connections.",
+            "Perform battery State of Health (SoH) test.",
+            "Schedule battery replacement within 30 days.",
+        ],
+        "Oil Pressure Warning": [
+            "Check engine oil level immediately.",
+            "Inspect oil pump and pressure relief valve.",
+            "Do not drive until oil pressure is restored.",
+        ],
+        "Brake Wear": [
+            "Inspect brake pads and rotors.",
+            "Replace brake pads if below minimum thickness.",
+            "Schedule brake system inspection within 7 days.",
+        ],
+        "Engine Overheating": [
+            "Check coolant level and condition.",
+            "Inspect radiator and cooling fans.",
+            "Check for coolant leaks in hoses and connections.",
+        ],
+        "Tyre Pressure Issue": [
+            "Inspect all tyre pressures.",
+            "Inflate or deflate to BMW specification.",
+            "Check for punctures or slow leaks.",
+        ],
+        "Suspension/Vibration Issue": [
+            "Inspect shock absorbers and struts.",
+            "Check wheel balance and alignment.",
+            "Inspect suspension bushings and joints.",
+        ],
+        "Service Overdue": [
+            "Schedule full BMW service immediately.",
+            "Replace engine oil and filter.",
+            "Inspect all service-interval components.",
+        ],
+        "No Fault": [
+            "All systems are within normal operating range.",
+            "Continue with standard maintenance schedule.",
+        ],
+    }
+    return lookup.get(prediction, ["Schedule a full vehicle inspection."])
 
 
 def get_explainability(values, thresholds):
@@ -171,6 +237,36 @@ def get_shap_explainability(model, vehicle_data, prediction):
         return None
 
 
+def calculate_days_to_failure(prediction, values, thresholds):
+    if prediction == "No Fault":
+        return None
+
+    if prediction == "Battery Degradation":
+        voltage_deficit = max(0, thresholds["battery_voltage"] - values["battery_voltage"])
+        soh_deficit = max(0, thresholds["battery_soh"] - values["battery_soh"])
+        return max(7, int(90 - voltage_deficit * 40 - soh_deficit * 1.5))
+
+    if prediction == "Oil Pressure Warning":
+        pressure_deficit = max(0, thresholds["oil_pressure"] - values["oil_pressure"])
+        return max(3, int(21 - pressure_deficit * 12))
+
+    if prediction == "Brake Wear":
+        pad_deficit = max(0, thresholds["brake_pad_thickness"] - values["brake_pad_thickness"])
+        sensor_deficit = max(0, thresholds["brake_sensor"] - values["brake_sensor"])
+        return max(7, int(60 - pad_deficit * 12 - sensor_deficit * 0.5))
+
+    if prediction == "Engine Overheating":
+        temp_excess = max(0, values["engine_temp"] - thresholds["engine_temp"])
+        coolant_excess = max(0, values["coolant_temp"] - thresholds["coolant_temp"])
+        return max(3, int(30 - temp_excess * 2 - coolant_excess * 1.5))
+
+    if prediction == "Service Overdue":
+        service_excess = max(0, values["last_service_km"] - thresholds["last_service_km"])
+        return max(7, int(45 - service_excess // 600))
+
+    return 60
+
+
 def build_gauge(title, value, min_value, max_value, units="", threshold=None):
     fig = go.Figure(
         go.Indicator(
@@ -203,21 +299,54 @@ def build_gauge(title, value, min_value, max_value, units="", threshold=None):
     return fig
 
 
-def get_engineering_explanation(values, thresholds):
-    explanations = []
-    if values["battery_voltage"] < thresholds["battery_voltage"]:
-        explanations.append("Battery voltage is below the BMW 3 Series operating threshold.")
+def get_engineering_explanation(prediction, values, thresholds):
+    if prediction == "Battery Degradation":
+        explanations = []
+        if values["battery_voltage"] < thresholds["battery_voltage"]:
+            explanations.append("Battery voltage trend is decreasing below BMW operating threshold.")
+        if values["battery_soh"] < thresholds["battery_soh"]:
+            explanations.append(f"Battery State of Health ({values['battery_soh']:.0f}%) indicates significant capacity loss.")
+        if values["vehicle_age"] > 5:
+            explanations.append("Vehicle age exceeds expected battery lifespan.")
+        return explanations or ["Battery degradation pattern detected from sensor trends."]
 
-    if values["vehicle_age"] > 5:
-        explanations.append("Vehicle age exceeds recommended battery replacement cycle.")
+    if prediction == "Oil Pressure Warning":
+        explanations = [f"Oil pressure ({values['oil_pressure']:.2f} bar) is below safe operating threshold of {thresholds['oil_pressure']} bar."]
+        if values["mileage"] > 100000:
+            explanations.append("High mileage increases risk of oil pump wear.")
+        return explanations
 
-    if values["last_service_km"] > thresholds["last_service_km"]:
-        explanations.append("Predicted battery degradation risk is elevated.")
+    if prediction == "Brake Wear":
+        explanations = []
+        if values["brake_pad_thickness"] < thresholds["brake_pad_thickness"]:
+            explanations.append(f"Brake pad thickness ({values['brake_pad_thickness']:.1f}mm) is below the minimum safety threshold.")
+        if values["brake_sensor"] < thresholds["brake_sensor"]:
+            explanations.append(f"Brake wear sensor ({values['brake_sensor']:.0f}%) indicates advanced wear.")
+        return explanations or ["Brake wear detected from sensor data."]
 
-    if not explanations:
-        explanations.append("System sensors are within normal operating ranges for this vehicle.")
+    if prediction == "Engine Overheating":
+        explanations = []
+        if values["engine_temp"] > thresholds["engine_temp"]:
+            explanations.append(f"Engine temperature ({values['engine_temp']}\u00b0C) exceeds safe operating limit.")
+        if values["coolant_temp"] > thresholds["coolant_temp"]:
+            explanations.append(f"Coolant temperature ({values['coolant_temp']:.1f}\u00b0C) indicates cooling system stress.")
+        return explanations or ["Engine thermal anomaly detected."]
 
-    return explanations
+    if prediction == "Service Overdue":
+        return [
+            f"Distance since last service ({values['last_service_km']:,}km) exceeds the {thresholds['last_service_km']:,}km BMW service interval.",
+            "Continued operation without service increases mechanical wear risk.",
+        ]
+
+    if prediction == "Tyre Pressure Issue":
+        return [f"Tyre pressure ({values['tyre_pressure']:.1f} PSI) is outside the safe BMW operating range (29\u201339 PSI)."]
+
+    if prediction == "Suspension/Vibration Issue":
+        return [
+            f"Vibration level ({values['vibration_level']:.1f}) combined with high mileage ({values['mileage']:,}km) indicates suspension degradation.",
+        ]
+
+    return ["All primary sensor readings are within expected operating range."]
 
 
 def format_probability_table(model, vehicle_data):
@@ -301,7 +430,7 @@ st.markdown(
     <div class="bmw-hero">
         <div class="bmw-kicker">BMW Engineering Diagnostics</div>
         <h1>BMW AI Predictive Maintenance System</h1>
-        <div class="bmw-version">Version 1.0 | Fault Prediction, Risk Scoring, Explainable AI</div>
+        <div class="bmw-version">Version 2.0 | Predictive AI · Failure Probability · Estimated Failure Time</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -316,9 +445,13 @@ thresholds = MODEL_THRESHOLDS[selected_model]
 
 st.sidebar.markdown("### Active Engineering Thresholds")
 st.sidebar.write(f"Battery voltage: {thresholds['battery_voltage']} V")
-st.sidebar.write(f"Engine temperature: {thresholds['engine_temp']} C")
+st.sidebar.write(f"Battery SoH: {thresholds['battery_soh']}%")
+st.sidebar.write(f"Engine temperature: {thresholds['engine_temp']} °C")
+st.sidebar.write(f"Coolant temperature: {thresholds['coolant_temp']} °C")
+st.sidebar.write(f"Oil pressure: {thresholds['oil_pressure']} bar")
 st.sidebar.write(f"Service interval: {thresholds['last_service_km']:,} km")
 st.sidebar.write(f"Brake pad thickness: {thresholds['brake_pad_thickness']} mm")
+st.sidebar.write(f"Brake sensor: {thresholds['brake_sensor']}%")
 
 input_col, status_col = st.columns([1.15, 0.85])
 
@@ -341,6 +474,21 @@ with input_col:
         vibration_level = st.slider("Vibration Level", 0.0, 10.0, 2.5)
         last_service_km = st.number_input("Distance Since Last Service", 0, 50000, 10000)
 
+with st.expander("🔍 Advanced Sensor Inputs — Version 2.0", expanded=False):
+    adv1, adv2, adv3 = st.columns(3)
+    with adv1:
+        engine_rpm = st.slider("Engine RPM", 500, 6000, 2500)
+        coolant_temp = st.slider("Coolant Temperature (°C)", 60, 130, 88)
+        oil_pressure = st.slider("Oil Pressure (bar)", 1.0, 6.0, 3.5)
+    with adv2:
+        brake_sensor = st.slider("Brake Wear Sensor (%)", 0, 100, 80)
+        battery_soh = st.slider("Battery State of Health (%)", 40, 100, 87)
+        driving_behavior_score = st.slider("Driving Behaviour Score", 0, 100, 75)
+    with adv3:
+        road_condition_score = st.slider("Road Condition Score", 0, 100, 70)
+        weather_impact_score = st.slider("Weather Impact Score", 0, 100, 75)
+        maintenance_history_score = st.slider("Maintenance History Score", 0, 100, 72)
+
 with status_col:
     st.markdown('<div class="section-label">System Profile</div>', unsafe_allow_html=True)
     st.metric("Selected BMW Model", selected_model)
@@ -359,6 +507,15 @@ if st.button("Run AI Diagnostic"):
         "vibration_level": vibration_level,
         "fuel_efficiency": fuel_efficiency,
         "last_service_km": last_service_km,
+        "engine_rpm": engine_rpm,
+        "coolant_temp": coolant_temp,
+        "oil_pressure": oil_pressure,
+        "brake_sensor": brake_sensor,
+        "battery_soh": battery_soh,
+        "driving_behavior_score": driving_behavior_score,
+        "road_condition_score": road_condition_score,
+        "weather_impact_score": weather_impact_score,
+        "maintenance_history_score": maintenance_history_score,
     }
 
     vehicle_data = pd.DataFrame([values])
@@ -367,8 +524,10 @@ if st.button("Run AI Diagnostic"):
     probability_table = format_probability_table(model, vehicle_data)
     health_score = calculate_health_score(values, thresholds)
     risk = calculate_risk_level(health_score)
-    recommendations = get_recommendations(values, thresholds)
-    explanation_lines = get_engineering_explanation(values, thresholds)
+    recommendations = get_recommendations(prediction, values, thresholds)
+    explanation_lines = get_engineering_explanation(prediction, values, thresholds)
+    days_to_failure = calculate_days_to_failure(prediction, values, thresholds)
+    failure_prob = probability_table.iloc[0]["Probability"] * 100
     explainability = get_shap_explainability(model, vehicle_data, prediction)
     explanation_source = "SHAP feature attribution"
 
@@ -376,65 +535,83 @@ if st.button("Run AI Diagnostic"):
         explainability = get_explainability(values, thresholds)
         explanation_source = "Engineering threshold attribution"
 
-    battery_health = int(max(0, min(100, (battery_voltage - 10.0) / 5.0 * 100)))
-    engine_temp_value = engine_temp
+    # ── Version 2 Diagnostic Card ─────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### AI Diagnostic Report")
 
-    st.markdown('<div class="section-label">Prediction Result</div>', unsafe_allow_html=True)
-    result_col, health_col, risk_col = st.columns(3)
+    card_a, card_b, card_c, card_d = st.columns(4)
+    card_a.metric("Vehicle", selected_model)
+    card_b.metric("Health Score", f"{health_score}/100")
+    card_c.metric("Predicted Issue", prediction)
+    card_d.metric("Failure Probability", f"{failure_prob:.0f}%")
 
-    with result_col:
-        st.success(f"Predicted Fault: {prediction}")
-        st.metric("Vehicle Health Score", f"{health_score}/100")
-
-    with health_col:
-        st.metric("Battery Health", f"{battery_health}%")
-        st.plotly_chart(
-            build_gauge("Battery Health", battery_health, 0, 100, units="%"),
-            use_container_width=True,
-        )
-
-    with risk_col:
-        st.metric("Engine Temp Gauge", f"{engine_temp_value}°C")
-        st.plotly_chart(
-            build_gauge("Engine Temperature", engine_temp_value, 60, 130, units="°C", threshold=thresholds["engine_temp"]),
-            use_container_width=True,
-        )
+    if days_to_failure is not None:
+        est_col, risk_col2 = st.columns(2)
+        est_col.metric("Estimated Failure Time", f"{days_to_failure} Days")
+        if risk == "High Risk":
+            risk_col2.error(f"⚠️ Risk Level: {risk}")
+        elif risk == "Medium Risk":
+            risk_col2.warning(f"⚠️ Risk Level: {risk}")
+        else:
+            risk_col2.success(f"✅ Risk Level: {risk}")
+    else:
+        st.success(f"✅ Risk Level: {risk} — No failure predicted.")
 
     st.markdown("---")
-    probability_col, recommendation_col = st.columns([1.05, 0.95])
 
-    with probability_col:
-        st.subheader("Fault Probability")
-        prob_metrics = probability_table.head(4)
-        cols = st.columns(len(prob_metrics))
-        for idx, (_, row) in enumerate(prob_metrics.iterrows()):
-            cols[idx].metric(row["Fault Type"], row["Probability %"])
+    # ── Recommended Actions + Engineering Reason ──────────────────────────
+    action_col, reason_col = st.columns(2)
 
-        st.dataframe(
-            probability_table[["Fault Type", "Probability %"]],
-            hide_index=True,
-            use_container_width=True,
-        )
-
-    with recommendation_col:
-        st.subheader("AI Maintenance Recommendations")
+    with action_col:
+        st.subheader("Recommended Actions")
         for item in recommendations:
             st.write(f"✓ {item}")
-        st.markdown("---")
-        st.subheader("Engineering Explanation")
+
+    with reason_col:
+        st.subheader("Engineering Reason")
         for line in explanation_lines:
             st.write(line)
 
     st.markdown("---")
+
+    # ── Fault Probability breakdown ───────────────────────────────────────
+    st.subheader("Fault Probability")
+    prob_metrics = probability_table.head(4)
+    prob_cols = st.columns(len(prob_metrics))
+    for idx, (_, row) in enumerate(prob_metrics.iterrows()):
+        prob_cols[idx].metric(row["Fault Type"], row["Probability %"])
+
+    st.dataframe(
+        probability_table[["Fault Type", "Probability %"]],
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    st.markdown("---")
+
+    # ── Gauge Charts ──────────────────────────────────────────────────────
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        st.plotly_chart(
+            build_gauge("Vehicle Health", health_score, 0, 100, units="%"),
+            use_container_width=True,
+        )
+    with g2:
+        st.plotly_chart(
+            build_gauge("Battery SoH", battery_soh, 40, 100, units="%", threshold=thresholds["battery_soh"]),
+            use_container_width=True,
+        )
+    with g3:
+        st.plotly_chart(
+            build_gauge("Engine Temperature", engine_temp, 60, 130, units="°C", threshold=thresholds["engine_temp"]),
+            use_container_width=True,
+        )
+
+    st.markdown("---")
+
+    # ── Explainable AI Attribution ────────────────────────────────────────
     st.subheader("Explainable AI Attribution")
     st.caption(explanation_source)
-    st.write("Prediction caused by:")
     for feature, contribution in explainability:
         sign = "+" if contribution >= 0 else ""
         st.write(f"{feature} ({sign}{contribution}%)")
-
-    st.markdown("---")
-    st.plotly_chart(
-        build_gauge("Vehicle Health Gauge", health_score, 0, 100, units="%"),
-        use_container_width=True,
-    )
