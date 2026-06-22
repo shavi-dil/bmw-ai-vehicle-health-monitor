@@ -50,6 +50,8 @@ st.set_page_config(
     layout="wide",
 )
 
+st.title("BMW AI Predictive Maintenance System")
+
 
 @st.cache_resource
 def load_model():
