@@ -369,9 +369,16 @@ model = load_model()
 st.markdown(
     """
     <style>
+        :root {
+            --bmw-blue: #0066b1;
+            --bmw-bg: #f4f7fb;
+            --bmw-text: #111827;
+            --bmw-card-border: #d8e0ea;
+        }
+
         .stApp {
-            background: #f4f7fb;
-            color: #111827;
+            background: var(--bmw-bg);
+            color: var(--bmw-text);
         }
 
         div[data-testid="stHeader"] {
@@ -379,15 +386,16 @@ st.markdown(
         }
 
         .bmw-hero {
-            border-left: 6px solid #0066b1;
+            border-left: 6px solid var(--bmw-blue);
             padding: 1.2rem 1.4rem;
             background: linear-gradient(90deg, #ffffff 0%, #edf4fb 100%);
             box-shadow: 0 8px 22px rgba(17, 24, 39, 0.08);
             margin-bottom: 1.3rem;
+            border-radius: 8px;
         }
 
         .bmw-kicker {
-            color: #0066b1;
+            color: var(--bmw-blue);
             font-size: 0.8rem;
             font-weight: 800;
             letter-spacing: 0.08rem;
@@ -408,7 +416,7 @@ st.markdown(
 
         div[data-testid="stMetric"] {
             background: #ffffff;
-            border: 1px solid #d8e0ea;
+            border: 1px solid var(--bmw-card-border);
             padding: 1rem;
             border-radius: 8px;
             box-shadow: 0 4px 14px rgba(17, 24, 39, 0.05);
@@ -419,6 +427,73 @@ st.markdown(
             font-size: 1rem;
             font-weight: 800;
             margin: 0.6rem 0 0.5rem;
+        }
+
+        div[data-testid="stHorizontalBlock"] {
+            gap: 0.75rem;
+        }
+
+        div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+            min-width: 0;
+        }
+
+        div[data-testid="stDataFrame"] {
+            overflow-x: auto;
+        }
+
+        div[data-testid="stButton"] > button {
+            width: 100%;
+            min-height: 48px;
+            font-weight: 700;
+        }
+
+        @media (max-width: 900px) {
+            .bmw-hero {
+                padding: 1rem;
+            }
+
+            .bmw-hero h1 {
+                font-size: 1.5rem;
+            }
+
+            .bmw-version {
+                font-size: 0.9rem;
+                line-height: 1.35;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .block-container {
+                padding-left: 0.75rem;
+                padding-right: 0.75rem;
+            }
+
+            div[data-testid="stHorizontalBlock"] {
+                flex-wrap: wrap;
+            }
+
+            div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+                flex: 1 1 100% !important;
+                width: 100% !important;
+            }
+
+            div[data-testid="stMetric"] {
+                padding: 0.85rem;
+            }
+
+            .section-label {
+                margin-top: 0.25rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .bmw-kicker {
+                font-size: 0.72rem;
+            }
+
+            .bmw-hero h1 {
+                font-size: 1.28rem;
+            }
         }
     </style>
     """,
