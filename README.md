@@ -1,12 +1,13 @@
-# BMW AI Vehicle Health Monitor
+# BMW AI Predictive Maintenance System
 
-An AI-powered predictive maintenance dashboard for BMW vehicles.
+An AI-powered predictive maintenance and vehicle health monitoring system for BMW vehicles.
 
 ## Features
-- Vehicle fault prediction
-- Vehicle health monitoring
-- Risk assessment
-- Maintenance recommendations
+- BMW vehicle diagnostics
+- AI fault prediction
+- Predictive maintenance
+- Vehicle health scoring
+- Engineering recommendations
 
 ## Technologies
 - Python
