@@ -52,7 +52,7 @@ st.set_page_config(
 
 @st.cache_resource
 def load_model():
-    return joblib.load("models/fault_prediction_model.pkl")
+    return joblib.load("fault_prediction_model.pkl")
 
 
 def calculate_health_score(values, thresholds):
