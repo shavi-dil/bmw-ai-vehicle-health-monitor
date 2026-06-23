@@ -6,6 +6,11 @@ from typing import List, Optional, Tuple
 import numpy as np
 from PIL import Image
 
+try:
+    import streamlit as st
+except ImportError:
+    st = None
+
 CV2_AVAILABLE = True
 CV2_IMPORT_ERROR = ""
 try:
@@ -142,6 +147,8 @@ def compute_damage_risk(rgb_image: np.ndarray) -> Tuple[np.ndarray, DamageAssess
 def run_damage_detection(image: Image.Image):
     rgb = np.array(image.convert("RGB"))
     if not CV2_AVAILABLE:
+        if st is not None:
+            st.warning("Computer Vision damage detection is unavailable in this deployment environment.")
         assessment = DamageAssessment(
             risk_score=0,
             possible_issue="Computer Vision damage detection is unavailable in this deployment environment.",
