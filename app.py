@@ -1085,6 +1085,114 @@ def render_cv_prototype_page():
     c3.image(edges, caption="Edge Detection", use_container_width=True)
 
 
+def render_ai_damage_detection_page():
+    st.markdown("## AI Damage Detection")
+    st.caption("YOLO module is a prototype with a general pre-trained model unless a custom damage dataset/model is trained.")
+
+    uploaded = st.file_uploader("Upload vehicle image for damage analysis", type=["jpg", "jpeg", "png"], key="damage_upload")
+    if not uploaded:
+        return
+
+    image = Image.open(uploaded)
+    original, processed, yolo_output, detections, yolo_used, assessment = run_damage_detection(image)
+
+    col1, col2 = st.columns(2)
+    col1.image(original, caption="Uploaded Image", use_container_width=True)
+    col2.image(processed, caption="Processed Image (Edges/Contours)", use_container_width=True)
+
+    st.image(yolo_output, caption="YOLO Detection Output", use_container_width=True)
+
+    if yolo_used and detections:
+        st.success(f"YOLO detections found: {len(detections)} object(s)")
+        for item in detections[:8]:
+            st.write(f"- {item.label} ({item.confidence:.2f})")
+    elif yolo_used:
+        st.info("YOLO loaded, but no clear objects detected in this image.")
+    else:
+        st.warning("YOLO model unavailable in current environment. Running prototype risk assessment only.")
+
+    st.markdown("### Simulated Damage Assessment")
+    risk_col, issue_col = st.columns(2)
+    risk_col.metric("Damage Risk Score", f"{assessment.risk_score}/100")
+    issue_col.metric("Possible Issue", assessment.possible_issue)
+    st.write(f"Recommendation: {assessment.recommendation}")
+
+
+def render_ev_battery_ai_page():
+    st.markdown("## EV Battery AI")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        battery_age = st.number_input("Battery Age (years)", 0, 20, 5)
+        current_capacity = st.number_input("Current Battery Capacity (kWh)", 10.0, 200.0, 72.0)
+        original_capacity = st.number_input("Original Battery Capacity (kWh)", 10.0, 220.0, 85.0)
+        charging_freq = st.number_input("Average Charging Frequency / week", 0, 40, 4)
+    with col2:
+        fast_charging = st.number_input("Fast Charging Frequency / week", 0, 40, 2)
+        weekly_distance = st.number_input("Average Driving Distance / week (km)", 0.0, 2500.0, 380.0)
+        avg_temp = st.number_input("Average Temperature Exposure (°C)", -20.0, 60.0, 28.0)
+        odometer = st.number_input("Current Odometer Reading (km)", 0.0, 500000.0, 65000.0)
+
+    if st.button("Run EV Battery AI"):
+        inputs = {
+            "battery_age": battery_age,
+            "current_battery_capacity": current_capacity,
+            "original_battery_capacity": original_capacity,
+            "charging_frequency_per_week": charging_freq,
+            "fast_charging_frequency_per_week": fast_charging,
+            "average_driving_distance_per_week": weekly_distance,
+            "average_temperature_exposure": avg_temp,
+            "current_odometer_reading": odometer,
+        }
+        result = predict_ev_health(inputs)
+
+        r1, r2, r3 = st.columns(3)
+        r1.metric("Battery SoH", result["battery_soh"])
+        r2.metric("Degradation Risk", result["degradation_risk"])
+        r3.metric("Estimated Replacement Window", result["estimated_replacement_window"])
+
+        st.write(f"Recommendation: {result['recommendation']}")
+        st.caption(result["explanation"])
+
+
+def render_driving_behaviour_ai_page():
+    st.markdown("## Driving Behaviour AI")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        average_speed = st.number_input("Average Speed (km/h)", 0.0, 200.0, 72.0)
+        harsh_braking = st.number_input("Harsh Braking Events / week", 0, 120, 10)
+        harsh_accel = st.number_input("Harsh Acceleration Events / week", 0, 120, 9)
+        cornering_intensity = st.slider("Cornering Intensity", 0.0, 10.0, 4.0)
+    with col2:
+        weekly_distance = st.number_input("Weekly Distance (km)", 0.0, 2500.0, 350.0)
+        night_driving = st.slider("Night Driving Frequency (%)", 0.0, 100.0, 28.0)
+        fuel_efficiency = st.number_input("Fuel Efficiency", 2.0, 25.0, 8.0)
+
+    if st.button("Run Driving Behaviour AI"):
+        inputs = {
+            "average_speed": average_speed,
+            "harsh_braking_events_per_week": harsh_braking,
+            "harsh_acceleration_events_per_week": harsh_accel,
+            "cornering_intensity": cornering_intensity,
+            "weekly_distance": weekly_distance,
+            "night_driving_frequency": night_driving,
+            "fuel_efficiency": fuel_efficiency,
+        }
+        result = evaluate_driving_behaviour(inputs)
+
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Driving Safety Score", f"{result['driving_safety_score']}/100")
+        s2.metric("Risk Level", result["risk_level"])
+        s3.metric("Main Factors", result["main_factors"])
+
+        i1, i2 = st.columns(2)
+        i1.metric("Brake Wear Impact", result["brake_wear_impact"])
+        i2.metric("Fuel Efficiency Impact", result["fuel_efficiency_impact"])
+
+        st.write(f"Recommendation: {result['recommendation']}")
+
+
 model = load_model()
 
 st.markdown(
@@ -1478,6 +1586,9 @@ else:
             "AI Diagnostic",
             "Diagnostic History",
             "Reminders",
+            "AI Damage Detection",
+            "EV Battery AI",
+            "Driving Behaviour AI",
             "Computer Vision Prototype",
         ],
     )
@@ -1500,5 +1611,11 @@ else:
         render_history_page()
     elif page == "Reminders":
         render_reminders_page()
+    elif page == "AI Damage Detection":
+        render_ai_damage_detection_page()
+    elif page == "EV Battery AI":
+        render_ev_battery_ai_page()
+    elif page == "Driving Behaviour AI":
+        render_driving_behaviour_ai_page()
     else:
         render_cv_prototype_page()
