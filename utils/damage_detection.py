@@ -3,9 +3,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-import cv2
 import numpy as np
 from PIL import Image
+
+CV2_AVAILABLE = True
+CV2_IMPORT_ERROR = ""
+try:
+    import cv2
+except Exception as exc:
+    cv2 = None
+    CV2_AVAILABLE = False
+    CV2_IMPORT_ERROR = str(exc)
 
 
 @dataclass
@@ -32,6 +40,9 @@ except Exception:
 
 
 def _draw_bbox(image: np.ndarray, bbox: Tuple[int, int, int, int], label: str, confidence: float) -> np.ndarray:
+    if not CV2_AVAILABLE:
+        return image.copy()
+
     x1, y1, x2, y2 = bbox
     output = image.copy()
     cv2.rectangle(output, (x1, y1), (x2, y2), (22, 101, 169), 2)
@@ -48,7 +59,7 @@ def detect_with_yolo(rgb_image: np.ndarray) -> Tuple[np.ndarray, List[DetectionR
     annotated = rgb_image.copy()
     detections: List[DetectionResult] = []
 
-    if not YOLO_AVAILABLE:
+    if not YOLO_AVAILABLE or not CV2_AVAILABLE:
         return annotated, detections, False
 
     try:
@@ -77,6 +88,13 @@ def detect_with_yolo(rgb_image: np.ndarray) -> Tuple[np.ndarray, List[DetectionR
 
 
 def compute_damage_risk(rgb_image: np.ndarray) -> Tuple[np.ndarray, DamageAssessment]:
+    if not CV2_AVAILABLE:
+        return rgb_image.copy(), DamageAssessment(
+            risk_score=0,
+            possible_issue="Computer Vision prototype is unavailable in this deployment environment.",
+            recommendation="OpenCV could not be loaded in this runtime.",
+        )
+
     bgr = cv2.cvtColor(rgb_image, cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
 
@@ -123,6 +141,14 @@ def compute_damage_risk(rgb_image: np.ndarray) -> Tuple[np.ndarray, DamageAssess
 
 def run_damage_detection(image: Image.Image):
     rgb = np.array(image.convert("RGB"))
+    if not CV2_AVAILABLE:
+        assessment = DamageAssessment(
+            risk_score=0,
+            possible_issue="Computer Vision prototype is unavailable in this deployment environment.",
+            recommendation="OpenCV could not be loaded in this runtime.",
+        )
+        return rgb, rgb, rgb, [], False, assessment
+
     yolo_image, detections, yolo_used = detect_with_yolo(rgb)
     processed_image, assessment = compute_damage_risk(rgb)
     return rgb, processed_image, yolo_image, detections, yolo_used, assessment

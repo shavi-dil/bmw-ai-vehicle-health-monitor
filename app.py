@@ -9,7 +9,10 @@ import secrets
 from datetime import date, datetime, timedelta
 from PIL import Image
 
-from cv_prototype.image_processing import process_uploaded_image
+from cv_prototype.image_processing import (
+    cv_prototype_available,
+    process_uploaded_image,
+)
 from utils.damage_detection import run_damage_detection
 from utils.driving_behaviour import evaluate_driving_behaviour
 from utils.ev_battery import predict_ev_health
@@ -1072,6 +1075,10 @@ def render_cv_prototype_page():
     st.markdown("## Computer Vision Prototype")
     st.caption("Prototype only: grayscale and edge-detection based vehicle damage inspection simulation")
 
+    if not cv_prototype_available():
+        st.warning("Computer Vision prototype is unavailable in this deployment environment.")
+        return
+
     uploaded = st.file_uploader("Upload vehicle image", type=["jpg", "jpeg", "png"])
     if not uploaded:
         return
@@ -1088,6 +1095,10 @@ def render_cv_prototype_page():
 def render_ai_damage_detection_page():
     st.markdown("## AI Damage Detection")
     st.caption("YOLO module is a prototype with a general pre-trained model unless a custom damage dataset/model is trained.")
+
+    if not cv_prototype_available():
+        st.warning("Computer Vision prototype is unavailable in this deployment environment.")
+        return
 
     uploaded = st.file_uploader("Upload vehicle image for damage analysis", type=["jpg", "jpeg", "png"], key="damage_upload")
     if not uploaded:
