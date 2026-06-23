@@ -10,6 +10,9 @@ from datetime import date, datetime, timedelta
 from PIL import Image
 
 from cv_prototype.image_processing import process_uploaded_image
+from utils.damage_detection import run_damage_detection
+from utils.driving_behaviour import evaluate_driving_behaviour
+from utils.ev_battery import predict_ev_health
 
 
 MODEL_THRESHOLDS = {
