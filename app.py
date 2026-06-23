@@ -2,6 +2,12 @@ import pandas as pd
 import joblib
 import plotly.graph_objects as go
 import streamlit as st
+import os
+
+import requests
+from PIL import Image
+
+from cv_prototype.image_processing import process_uploaded_image
 
 
 MODEL_THRESHOLDS = {
@@ -66,6 +72,8 @@ MODEL_THRESHOLDS = {
         "battery_soh": 72,
     },
 }
+
+API_BASE_URL = os.getenv("BMW_API_URL", "http://127.0.0.1:8000")
 
 
 st.set_page_config(
@@ -222,6 +230,46 @@ st.title("BMW AI Predictive Maintenance System")
 @st.cache_resource
 def load_model():
     return joblib.load("fault_prediction_model.pkl")
+
+
+def init_session_state():
+    defaults = {
+        "logged_in": False,
+        "user_id": None,
+        "vehicle_id": None,
+        "full_name": "",
+        "user_profile": None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def api_request(method, endpoint, payload=None, params=None):
+    url = f"{API_BASE_URL}{endpoint}"
+    try:
+        response = requests.request(method, url, json=payload, params=params, timeout=8)
+        if response.status_code >= 400:
+            try:
+                detail = response.json().get("detail", response.text)
+            except Exception:
+                detail = response.text
+            return None, detail
+        return response.json(), None
+    except Exception as exc:
+        return None, str(exc)
+
+
+def load_profile_from_api():
+    if not st.session_state.get("logged_in") or not st.session_state.get("user_id"):
+        return None
+    profile, error = api_request("GET", "/user/profile", params={"user_id": st.session_state["user_id"]})
+    if error:
+        return None
+    st.session_state["user_profile"] = profile
+    st.session_state["vehicle_id"] = profile.get("vehicle_id")
+    st.session_state["full_name"] = profile.get("full_name", "")
+    return profile
 
 
 def calculate_health_score(values, thresholds):
@@ -506,6 +554,175 @@ def format_probability_table(model, vehicle_data):
     return probability_table.sort_values("Probability", ascending=False)
 
 
+def render_auth_page():
+    st.markdown("## Account Access")
+    st.caption("Use Login/Register for full persistence features, or continue in guest mode for local diagnostics.")
+
+    if st.button("Continue as Guest (Local Diagnostic Mode)"):
+        st.session_state["logged_in"] = True
+        st.session_state["user_id"] = 0
+        st.session_state["vehicle_id"] = 0
+        st.session_state["full_name"] = "Guest User"
+        st.session_state["user_profile"] = {
+            "full_name": "Guest User",
+            "bmw_model": "BMW 3 Series",
+            "registration_number": "GUEST-LOCAL",
+            "mileage": 50000,
+            "vehicle_age": 5,
+        }
+        st.rerun()
+
+    tab_login, tab_register = st.tabs(["Login", "Register"])
+
+    with tab_login:
+        with st.form("login_form"):
+            identifier = st.text_input("Email or Vehicle Registration Number")
+            password = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Login")
+
+        if submitted:
+            payload = {"identifier": identifier, "password": password}
+            data, error = api_request("POST", "/login", payload=payload)
+            if error:
+                st.error(f"Login failed: {error}")
+            else:
+                st.session_state["logged_in"] = True
+                st.session_state["user_id"] = data["user_id"]
+                st.session_state["vehicle_id"] = data.get("vehicle_id")
+                st.session_state["full_name"] = data.get("full_name", "")
+                load_profile_from_api()
+                st.success("Login successful")
+                st.rerun()
+
+    with tab_register:
+        with st.form("register_form"):
+            full_name = st.text_input("Full Name")
+            email = st.text_input("Email")
+            password = st.text_input("Password", type="password")
+            registration_number = st.text_input("Vehicle Registration Number")
+            bmw_model = st.selectbox("BMW Model", list(MODEL_THRESHOLDS.keys()))
+            submitted = st.form_submit_button("Create Account")
+
+        if submitted:
+            payload = {
+                "full_name": full_name,
+                "email": email,
+                "password": password,
+                "vehicle_registration_number": registration_number,
+                "bmw_model": bmw_model,
+            }
+            data, error = api_request("POST", "/register", payload=payload)
+            if error:
+                st.error(f"Registration failed: {error}")
+            else:
+                st.success("Registration successful. Please login.")
+
+
+def render_dashboard_page():
+    profile = st.session_state.get("user_profile") or load_profile_from_api()
+    if not profile:
+        st.warning("Could not load profile from backend.")
+        return
+
+    st.markdown("## Dashboard")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("User", profile.get("full_name", "-"))
+    col2.metric("BMW Model", profile.get("bmw_model", "-"))
+    col3.metric("Registration", profile.get("registration_number", "-"))
+
+    history, _ = api_request("GET", f"/diagnostics/history/{st.session_state['user_id']}")
+    reminders, _ = api_request("GET", f"/reminders/{st.session_state['user_id']}")
+
+    if history:
+        latest = history[0]
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Latest Health Score", f"{latest['health_score']}/100")
+        c2.metric("Latest Predicted Fault", latest["predicted_fault"])
+        c3.metric("Risk Level", latest["risk_level"])
+
+        if len(history) > 1:
+            prev = history[1]
+            st.markdown("### Trend Analysis")
+            t1, t2, t3, t4 = st.columns(4)
+            t1.metric("Mileage Change", latest["mileage"] - prev["mileage"])
+            t2.metric("Battery Voltage Change", round(latest["battery_voltage"] - prev["battery_voltage"], 2))
+            t3.metric("Brake Pad Change", round(latest["brake_pad_thickness"] - prev["brake_pad_thickness"], 2))
+            t4.metric("Health Score Change", latest["health_score"] - prev["health_score"])
+
+    st.markdown("### Reminder Alerts")
+    if reminders:
+        for item in reminders[:5]:
+            st.warning(f"{item['reminder_type']}: {item['reminder_message']} (due {item['due_date']})")
+    else:
+        st.info("No reminders available.")
+
+
+def render_vehicle_profile_page():
+    profile = st.session_state.get("user_profile") or load_profile_from_api()
+    if not profile:
+        st.warning("Could not load profile from backend.")
+        return
+
+    st.markdown("## Vehicle Profile")
+    with st.form("vehicle_profile_form"):
+        mileage = st.number_input("Mileage", min_value=0, value=int(profile.get("mileage") or 0))
+        vehicle_age = st.number_input("Vehicle Age", min_value=0, value=int(profile.get("vehicle_age") or 0))
+        submitted = st.form_submit_button("Save Vehicle Profile")
+
+    if submitted:
+        payload = {"mileage": int(mileage), "vehicle_age": int(vehicle_age)}
+        data, error = api_request("POST", "/vehicles/update", payload=payload, params={"user_id": st.session_state["user_id"]})
+        if error:
+            st.error(f"Could not update profile: {error}")
+        else:
+            st.success("Vehicle profile updated")
+            load_profile_from_api()
+
+
+def render_history_page():
+    st.markdown("## Diagnostic History")
+    history, error = api_request("GET", f"/diagnostics/history/{st.session_state['user_id']}")
+    if error:
+        st.error(error)
+        return
+    if not history:
+        st.info("No diagnostics yet.")
+        return
+    df = pd.DataFrame(history)
+    st.dataframe(df, use_container_width=True)
+
+
+def render_reminders_page():
+    st.markdown("## Reminders")
+    reminders, error = api_request("GET", f"/reminders/{st.session_state['user_id']}")
+    if error:
+        st.error(error)
+        return
+
+    if not reminders:
+        st.info("No reminders available.")
+    else:
+        for item in reminders:
+            st.write(f"- [{item['status']}] {item['reminder_type']}: {item['reminder_message']} (due {item['due_date']})")
+
+
+def render_cv_prototype_page():
+    st.markdown("## Computer Vision Prototype")
+    st.caption("Prototype only: grayscale and edge-detection based vehicle damage inspection simulation")
+
+    uploaded = st.file_uploader("Upload vehicle image", type=["jpg", "jpeg", "png"])
+    if not uploaded:
+        return
+
+    image = Image.open(uploaded)
+    rgb, gray, edges = process_uploaded_image(image)
+
+    c1, c2, c3 = st.columns(3)
+    c1.image(rgb, caption="Original", use_container_width=True)
+    c2.image(gray, caption="Grayscale", use_container_width=True)
+    c3.image(edges, caption="Edge Detection", use_container_width=True)
+
+
 model = load_model()
 
 st.markdown(
@@ -703,193 +920,223 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    """
-    <div class="bmw-hero">
-        <div class="bmw-kicker">BMW Engineering Diagnostics</div>
-        <h1>BMW AI Predictive Maintenance System</h1>
-        <div class="bmw-version">Version 2.0 | Predictive AI · Failure Probability · Estimated Failure Time</div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-st.sidebar.header("Vehicle Configuration")
-selected_model = st.sidebar.selectbox(
-    "BMW Model",
-    list(MODEL_THRESHOLDS.keys()),
-)
-thresholds = MODEL_THRESHOLDS[selected_model]
-
-st.sidebar.markdown("### Active Engineering Thresholds")
-st.sidebar.write(f"Battery voltage: {thresholds['battery_voltage']} V")
-st.sidebar.write(f"Battery SoH: {thresholds['battery_soh']}%")
-st.sidebar.write(f"Engine temperature: {thresholds['engine_temp']} °C")
-st.sidebar.write(f"Coolant temperature: {thresholds['coolant_temp']} °C")
-st.sidebar.write(f"Oil pressure: {thresholds['oil_pressure']} bar")
-st.sidebar.write(f"Service interval: {thresholds['last_service_km']:,} km")
-st.sidebar.write(f"Brake pad thickness: {thresholds['brake_pad_thickness']} mm")
-st.sidebar.write(f"Brake sensor: {thresholds['brake_sensor']}%")
-
-input_col, status_col = st.columns([1.15, 0.85])
-
-with input_col:
-    st.markdown('<div class="section-label">Vehicle Sensor Inputs</div>', unsafe_allow_html=True)
-
-    mileage = st.number_input("Mileage", 0, 300000, 50000)
-    vehicle_age = st.number_input("Vehicle Age", 0, 20, 5)
-
-    left, right = st.columns(2)
-    with left:
-        engine_temp = st.slider("Engine Temperature", 60, 130, 90)
-        battery_voltage = st.slider("Battery Voltage", 10.0, 15.0, 12.4)
-        brake_pad_thickness = st.slider("Brake Pad Thickness", 1.0, 12.0, 7.0)
-        fuel_efficiency = st.slider("Fuel Efficiency", 3.0, 15.0, 7.5)
-
-    with right:
-        oil_temp = st.slider("Oil Temperature", 60, 140, 95)
-        tyre_pressure = st.slider("Tyre Pressure", 20.0, 45.0, 34.0)
-        vibration_level = st.slider("Vibration Level", 0.0, 10.0, 2.5)
-        last_service_km = st.number_input("Distance Since Last Service", 0, 50000, 10000)
-
-with st.expander("🔍 Advanced Sensor Inputs — Version 2.0", expanded=False):
-    adv1, adv2, adv3 = st.columns(3)
-    with adv1:
-        engine_rpm = st.slider("Engine RPM", 500, 6000, 2500)
-        coolant_temp = st.slider("Coolant Temperature (°C)", 60, 130, 88)
-        oil_pressure = st.slider("Oil Pressure (bar)", 1.0, 6.0, 3.5)
-    with adv2:
-        brake_sensor = st.slider("Brake Wear Sensor (%)", 0, 100, 80)
-        battery_soh = st.slider("Battery State of Health (%)", 40, 100, 87)
-        driving_behavior_score = st.slider("Driving Behaviour Score", 0, 100, 75)
-    with adv3:
-        road_condition_score = st.slider("Road Condition Score", 0, 100, 70)
-        weather_impact_score = st.slider("Weather Impact Score", 0, 100, 75)
-        maintenance_history_score = st.slider("Maintenance History Score", 0, 100, 72)
-
-with status_col:
-    st.markdown('<div class="section-label">System Profile</div>', unsafe_allow_html=True)
-    st.metric("Selected BMW Model", selected_model)
-    st.metric("Diagnostic Mode", "Predictive AI")
-    st.metric("Model Status", "Loaded")
-
-if st.button("Run AI Diagnostic"):
-    values = {
-        "mileage": mileage,
-        "vehicle_age": vehicle_age,
-        "engine_temp": engine_temp,
-        "oil_temp": oil_temp,
-        "battery_voltage": battery_voltage,
-        "tyre_pressure": tyre_pressure,
-        "brake_pad_thickness": brake_pad_thickness,
-        "vibration_level": vibration_level,
-        "fuel_efficiency": fuel_efficiency,
-        "last_service_km": last_service_km,
-        "engine_rpm": engine_rpm,
-        "coolant_temp": coolant_temp,
-        "oil_pressure": oil_pressure,
-        "brake_sensor": brake_sensor,
-        "battery_soh": battery_soh,
-        "driving_behavior_score": driving_behavior_score,
-        "road_condition_score": road_condition_score,
-        "weather_impact_score": weather_impact_score,
-        "maintenance_history_score": maintenance_history_score,
-    }
-
-    vehicle_data = pd.DataFrame([values])
-
-    prediction = model.predict(vehicle_data)[0]
-    probability_table = format_probability_table(model, vehicle_data)
-    health_score = calculate_health_score(values, thresholds)
-    risk = calculate_risk_level(health_score)
-    recommendations = get_recommendations(prediction, values, thresholds)
-    explanation_lines = get_engineering_explanation(prediction, values, thresholds)
-    days_to_failure = calculate_days_to_failure(prediction, values, thresholds)
-    failure_prob = probability_table.iloc[0]["Probability"] * 100
-    explainability = get_shap_explainability(model, vehicle_data, prediction)
-    explanation_source = "SHAP feature attribution"
-
-    if explainability is None:
-        explainability = get_explainability(values, thresholds)
-        explanation_source = "Engineering threshold attribution"
-
-    # ── Version 2 Diagnostic Card ─────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("### AI Diagnostic Report")
-
-    card_a, card_b, card_c, card_d = st.columns(4)
-    card_a.metric("Vehicle", selected_model)
-    card_b.metric("Health Score", f"{health_score}/100")
-    card_c.metric("Predicted Issue", prediction)
-    card_d.metric("Failure Probability", f"{failure_prob:.0f}%")
-
-    if days_to_failure is not None:
-        est_col, risk_col2 = st.columns(2)
-        est_col.metric("Estimated Failure Time", f"{days_to_failure} Days")
-        if risk == "High Risk":
-            risk_col2.error(f"⚠️ Risk Level: {risk}")
-        elif risk == "Medium Risk":
-            risk_col2.warning(f"⚠️ Risk Level: {risk}")
-        else:
-            risk_col2.success(f"✅ Risk Level: {risk}")
-    else:
-        st.success(f"✅ Risk Level: {risk} — No failure predicted.")
-
-    st.markdown("---")
-
-    # ── Recommended Actions + Engineering Reason ──────────────────────────
-    action_col, reason_col = st.columns(2)
-
-    with action_col:
-        st.subheader("Recommended Actions")
-        for item in recommendations:
-            st.write(f"✓ {item}")
-
-    with reason_col:
-        st.subheader("Engineering Reason")
-        for line in explanation_lines:
-            st.write(line)
-
-    st.markdown("---")
-
-    # ── Fault Probability breakdown ───────────────────────────────────────
-    st.subheader("Fault Probability")
-    prob_metrics = probability_table.head(4)
-    prob_cols = st.columns(len(prob_metrics))
-    for idx, (_, row) in enumerate(prob_metrics.iterrows()):
-        prob_cols[idx].metric(row["Fault Type"], row["Probability %"])
-
-    st.dataframe(
-        probability_table[["Fault Type", "Probability %"]],
-        hide_index=True,
-        use_container_width=True,
+def render_hero():
+    st.markdown(
+        """
+        <div class="bmw-hero">
+            <div class="bmw-kicker">BMW Engineering Diagnostics</div>
+            <h1>BMW AI Predictive Maintenance System</h1>
+            <div class="bmw-version">Version 2.0 | Predictive AI · Failure Probability · Estimated Failure Time</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
-    st.markdown("---")
 
-    # ── Gauge Charts ──────────────────────────────────────────────────────
-    g1, g2, g3 = st.columns(3)
-    with g1:
-        st.plotly_chart(
-            build_gauge("Vehicle Health", health_score, 0, 100, units="%"),
-            use_container_width=True,
-        )
-    with g2:
-        st.plotly_chart(
-            build_gauge("Battery SoH", battery_soh, 40, 100, units="%", threshold=thresholds["battery_soh"]),
-            use_container_width=True,
-        )
-    with g3:
-        st.plotly_chart(
-            build_gauge("Engine Temperature", engine_temp, 60, 130, units="°C", threshold=thresholds["engine_temp"]),
-            use_container_width=True,
-        )
+def render_ai_diagnostic_page():
+    profile = st.session_state.get("user_profile") or load_profile_from_api() or {}
+    selected_model = profile.get("bmw_model") or st.selectbox("BMW Model", list(MODEL_THRESHOLDS.keys()))
+    thresholds = MODEL_THRESHOLDS[selected_model]
 
-    st.markdown("---")
+    st.sidebar.header("Vehicle Configuration")
+    st.sidebar.markdown("### Active Engineering Thresholds")
+    st.sidebar.write(f"Battery voltage: {thresholds['battery_voltage']} V")
+    st.sidebar.write(f"Battery SoH: {thresholds['battery_soh']}%")
+    st.sidebar.write(f"Engine temperature: {thresholds['engine_temp']} °C")
+    st.sidebar.write(f"Coolant temperature: {thresholds['coolant_temp']} °C")
+    st.sidebar.write(f"Oil pressure: {thresholds['oil_pressure']} bar")
+    st.sidebar.write(f"Service interval: {thresholds['last_service_km']:,} km")
+    st.sidebar.write(f"Brake pad thickness: {thresholds['brake_pad_thickness']} mm")
+    st.sidebar.write(f"Brake sensor: {thresholds['brake_sensor']}%")
 
-    # ── Explainable AI Attribution ────────────────────────────────────────
-    st.subheader("Explainable AI Attribution")
-    st.caption(explanation_source)
-    for feature, contribution in explainability:
-        sign = "+" if contribution >= 0 else ""
-        st.write(f"{feature} ({sign}{contribution}%)")
+    input_col, status_col = st.columns([1.15, 0.85])
+    with input_col:
+        st.markdown('<div class="section-label">Vehicle Sensor Inputs</div>', unsafe_allow_html=True)
+
+        mileage = st.number_input("Mileage", 0, 300000, int(profile.get("mileage") or 50000))
+        vehicle_age = st.number_input("Vehicle Age", 0, 20, int(profile.get("vehicle_age") or 5))
+
+        left, right = st.columns(2)
+        with left:
+            engine_temp = st.slider("Engine Temperature", 60, 130, 90)
+            battery_voltage = st.slider("Battery Voltage", 10.0, 15.0, 12.4)
+            brake_pad_thickness = st.slider("Brake Pad Thickness", 1.0, 12.0, 7.0)
+            fuel_efficiency = st.slider("Fuel Efficiency", 3.0, 15.0, 7.5)
+        with right:
+            oil_temp = st.slider("Oil Temperature", 60, 140, 95)
+            tyre_pressure = st.slider("Tyre Pressure", 20.0, 45.0, 34.0)
+            vibration_level = st.slider("Vibration Level", 0.0, 10.0, 2.5)
+            last_service_km = st.number_input("Distance Since Last Service", 0, 50000, 10000)
+
+    with st.expander("🔍 Advanced Sensor Inputs — Version 2.0", expanded=False):
+        adv1, adv2, adv3 = st.columns(3)
+        with adv1:
+            engine_rpm = st.slider("Engine RPM", 500, 6000, 2500)
+            coolant_temp = st.slider("Coolant Temperature (°C)", 60, 130, 88)
+            oil_pressure = st.slider("Oil Pressure (bar)", 1.0, 6.0, 3.5)
+        with adv2:
+            brake_sensor = st.slider("Brake Wear Sensor (%)", 0, 100, 80)
+            battery_soh = st.slider("Battery State of Health (%)", 40, 100, 87)
+            driving_behavior_score = st.slider("Driving Behaviour Score", 0, 100, 75)
+        with adv3:
+            road_condition_score = st.slider("Road Condition Score", 0, 100, 70)
+            weather_impact_score = st.slider("Weather Impact Score", 0, 100, 75)
+            maintenance_history_score = st.slider("Maintenance History Score", 0, 100, 72)
+
+    with status_col:
+        st.markdown('<div class="section-label">System Profile</div>', unsafe_allow_html=True)
+        st.metric("Selected BMW Model", selected_model)
+        st.metric("Diagnostic Mode", "Predictive AI")
+        st.metric("Model Status", "Loaded")
+
+    if st.button("Run AI Diagnostic"):
+        values = {
+            "mileage": mileage,
+            "vehicle_age": vehicle_age,
+            "engine_temp": engine_temp,
+            "oil_temp": oil_temp,
+            "battery_voltage": battery_voltage,
+            "tyre_pressure": tyre_pressure,
+            "brake_pad_thickness": brake_pad_thickness,
+            "vibration_level": vibration_level,
+            "fuel_efficiency": fuel_efficiency,
+            "last_service_km": last_service_km,
+            "engine_rpm": engine_rpm,
+            "coolant_temp": coolant_temp,
+            "oil_pressure": oil_pressure,
+            "brake_sensor": brake_sensor,
+            "battery_soh": battery_soh,
+            "driving_behavior_score": driving_behavior_score,
+            "road_condition_score": road_condition_score,
+            "weather_impact_score": weather_impact_score,
+            "maintenance_history_score": maintenance_history_score,
+        }
+
+        payload = {
+            **values,
+            "user_id": st.session_state.get("user_id", 0),
+            "vehicle_id": st.session_state.get("vehicle_id", 0),
+        }
+        backend_result, backend_error = api_request("POST", "/diagnostics/predict", payload=payload)
+
+        if backend_result:
+            prediction = backend_result["predicted_fault"]
+            health_score = backend_result["health_score"]
+            risk = backend_result["risk_level"]
+            failure_prob = backend_result["predicted_probability"]
+            estimated_failure_window = backend_result["estimated_failure_window"]
+            recommendations = backend_result["recommendations"]
+            explanation_lines = [backend_result["explanation"]]
+            probability_table = pd.DataFrame(backend_result["probability_table"])
+            probability_table["Fault Type"] = probability_table["fault_type"]
+            probability_table["Probability %"] = probability_table["probability_percent"].round(1).astype(str) + "%"
+            explainability = get_explainability(values, thresholds)
+            explanation_source = "Backend rule-based explanation"
+        else:
+            vehicle_data = pd.DataFrame([values])
+            prediction = model.predict(vehicle_data)[0]
+            probability_table = format_probability_table(model, vehicle_data)
+            health_score = calculate_health_score(values, thresholds)
+            risk = calculate_risk_level(health_score)
+            recommendations = get_recommendations(prediction, values, thresholds)
+            explanation_lines = get_engineering_explanation(prediction, values, thresholds)
+            days_to_failure = calculate_days_to_failure(prediction, values, thresholds)
+            estimated_failure_window = f"{max(1, days_to_failure-7)}-{days_to_failure} days" if days_to_failure else "90-180 days"
+            failure_prob = probability_table.iloc[0]["Probability"] * 100
+            explainability = get_shap_explainability(model, vehicle_data, prediction)
+            explanation_source = "SHAP feature attribution"
+            if explainability is None:
+                explainability = get_explainability(values, thresholds)
+                explanation_source = "Engineering threshold attribution"
+            st.warning("Backend offline. Running local prediction only.")
+            if backend_error:
+                st.caption(f"Backend message: {backend_error}")
+
+        st.markdown("---")
+        st.markdown("### AI Diagnostic Report")
+        card_a, card_b, card_c, card_d = st.columns(4)
+        card_a.metric("Vehicle", selected_model)
+        card_b.metric("Health Score", f"{health_score}/100")
+        card_c.metric("Predicted Issue", prediction)
+        card_d.metric("Failure Probability", f"{failure_prob:.0f}%")
+
+        info_a, info_b = st.columns(2)
+        info_a.metric("Estimated Failure Window", estimated_failure_window)
+        info_b.metric("Risk Level", risk)
+
+        action_col, reason_col = st.columns(2)
+        with action_col:
+            st.subheader("Recommended Actions")
+            for item in recommendations:
+                st.write(f"✓ {item}")
+        with reason_col:
+            st.subheader("Engineering Explanation")
+            for line in explanation_lines:
+                st.write(line)
+
+        st.markdown("---")
+        st.subheader("Fault Probability")
+        prob_metrics = probability_table.head(4)
+        prob_cols = st.columns(len(prob_metrics))
+        for idx, (_, row) in enumerate(prob_metrics.iterrows()):
+            label = row.get("Fault Type", row.get("fault_type", "Fault"))
+            value = row.get("Probability %", f"{row.get('probability_percent', 0):.1f}%")
+            prob_cols[idx].metric(label, value)
+
+        display_prob = probability_table[["Fault Type", "Probability %"]] if "Fault Type" in probability_table.columns else probability_table
+        st.dataframe(display_prob, hide_index=True, use_container_width=True)
+
+        st.markdown("---")
+        g1, g2, g3 = st.columns(3)
+        g1.plotly_chart(build_gauge("Vehicle Health", health_score, 0, 100, units="%"), use_container_width=True)
+        g2.plotly_chart(build_gauge("Battery SoH", battery_soh, 40, 100, units="%", threshold=thresholds["battery_soh"]), use_container_width=True)
+        g3.plotly_chart(build_gauge("Engine Temperature", engine_temp, 60, 130, units="°C", threshold=thresholds["engine_temp"]), use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("Explainable AI Attribution")
+        st.caption(explanation_source)
+        for feature, contribution in explainability:
+            sign = "+" if contribution >= 0 else ""
+            st.write(f"{feature} ({sign}{contribution}%)")
+
+
+init_session_state()
+render_hero()
+
+if not st.session_state["logged_in"]:
+    render_auth_page()
+else:
+    st.sidebar.header("Navigation")
+    st.sidebar.write(f"Logged in as: {st.session_state.get('full_name', 'User')}")
+    page = st.sidebar.selectbox(
+        "Go to",
+        [
+            "Dashboard",
+            "Vehicle Profile",
+            "AI Diagnostic",
+            "Diagnostic History",
+            "Reminders",
+            "Computer Vision Prototype",
+        ],
+    )
+
+    if st.sidebar.button("Logout"):
+        st.session_state["logged_in"] = False
+        st.session_state["user_id"] = None
+        st.session_state["vehicle_id"] = None
+        st.session_state["full_name"] = ""
+        st.session_state["user_profile"] = None
+        st.rerun()
+
+    if page == "Dashboard":
+        render_dashboard_page()
+    elif page == "Vehicle Profile":
+        render_vehicle_profile_page()
+    elif page == "AI Diagnostic":
+        render_ai_diagnostic_page()
+    elif page == "Diagnostic History":
+        render_history_page()
+    elif page == "Reminders":
+        render_reminders_page()
+    else:
+        render_cv_prototype_page()
