@@ -10,7 +10,7 @@ CV2_AVAILABLE = True
 CV2_IMPORT_ERROR = ""
 try:
     import cv2
-except Exception as exc:
+except ImportError as exc:
     cv2 = None
     CV2_AVAILABLE = False
     CV2_IMPORT_ERROR = str(exc)
@@ -144,7 +144,7 @@ def run_damage_detection(image: Image.Image):
     if not CV2_AVAILABLE:
         assessment = DamageAssessment(
             risk_score=0,
-            possible_issue="Computer Vision prototype is unavailable in this deployment environment.",
+            possible_issue="Computer Vision damage detection is unavailable in this deployment environment.",
             recommendation="OpenCV could not be loaded in this runtime.",
         )
         return rgb, rgb, rgb, [], False, assessment
