@@ -13,6 +13,9 @@ An AI-powered predictive maintenance and vehicle health monitoring system for BM
 - Reminder generation and reminder management
 - FastAPI backend with SQLite database
 - Computer Vision prototype (grayscale + edge detection)
+- AI Damage Detection page (YOLO prototype + OpenCV damage-risk assessment)
+- EV Battery AI page (SoH prediction, degradation risk, replacement window)
+- Driving Behaviour AI page (safety score, risk level, behavior insights)
 
 ## Technologies
 - Python
@@ -22,6 +25,15 @@ An AI-powered predictive maintenance and vehicle health monitoring system for BM
 - Scikit-Learn
 - Random Forest
 - OpenCV
+- YOLO (Ultralytics)
+- Predictive analytics modules
+
+## AI Techniques Used
+- Machine Learning (Random Forest)
+- Computer Vision (OpenCV)
+- YOLO object detection (prototype mode unless custom damage model is trained)
+- Predictive analytics and scoring models
+- Explainable AI-style rule-based reasoning
 
 ## Project Structure
 ```
