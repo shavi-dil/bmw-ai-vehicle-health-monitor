@@ -2,9 +2,11 @@ import pandas as pd
 import joblib
 import plotly.graph_objects as go
 import streamlit as st
-import os
-
-import requests
+import sqlite3
+import hashlib
+import hmac
+import secrets
+from datetime import date, datetime, timedelta
 from PIL import Image
 
 from cv_prototype.image_processing import process_uploaded_image
@@ -72,9 +74,6 @@ MODEL_THRESHOLDS = {
         "battery_soh": 72,
     },
 }
-
-API_BASE_URL = os.getenv("BMW_API_URL", "http://127.0.0.1:8000")
-
 
 st.set_page_config(
     page_title="BMW AI Predictive Maintenance System",
@@ -233,6 +232,7 @@ def load_model():
 
 
 def init_session_state():
+    init_local_db()
     defaults = {
         "logged_in": False,
         "user_id": None,
@@ -245,19 +245,378 @@ def init_session_state():
             st.session_state[key] = value
 
 
-def api_request(method, endpoint, payload=None, params=None):
-    url = f"{API_BASE_URL}{endpoint}"
+def get_db_connection():
+    conn = sqlite3.connect("bmw_health.db")
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_local_db():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS vehicles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            registration_number TEXT UNIQUE NOT NULL,
+            bmw_model TEXT NOT NULL,
+            mileage INTEGER DEFAULT 0,
+            vehicle_age INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS diagnostic_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            vehicle_id INTEGER NOT NULL,
+            mileage INTEGER NOT NULL,
+            engine_temp REAL NOT NULL,
+            oil_temp REAL NOT NULL,
+            battery_voltage REAL NOT NULL,
+            tyre_pressure REAL NOT NULL,
+            brake_pad_thickness REAL NOT NULL,
+            vibration_level REAL NOT NULL,
+            fuel_efficiency REAL NOT NULL,
+            last_service_km INTEGER NOT NULL,
+            predicted_fault TEXT NOT NULL,
+            health_score INTEGER NOT NULL,
+            risk_level TEXT NOT NULL,
+            recommendation TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(vehicle_id) REFERENCES vehicles(id)
+        )
+        """
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            vehicle_id INTEGER NOT NULL,
+            reminder_type TEXT NOT NULL,
+            reminder_message TEXT NOT NULL,
+            due_date TEXT NOT NULL,
+            status TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id),
+            FOREIGN KEY(vehicle_id) REFERENCES vehicles(id)
+        )
+        """
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000)
+    return f"{salt}${digest.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
     try:
-        response = requests.request(method, url, json=payload, params=params, timeout=8)
-        if response.status_code >= 400:
-            try:
-                detail = response.json().get("detail", response.text)
-            except Exception:
-                detail = response.text
-            return None, detail
-        return response.json(), None
+        salt, digest_hex = stored_hash.split("$", 1)
+    except ValueError:
+        return False
+    candidate = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+    return hmac.compare_digest(candidate, digest_hex)
+
+
+def create_reminders_from_values(user_id, vehicle_id, values):
+    reminders = []
+    if values.get("last_service_km", 0) > 20000:
+        reminders.append(("Service", "Vehicle service is overdue. Book a maintenance session.", str(date.today() + timedelta(days=7))))
+    if values.get("battery_voltage", 99) < 12.0:
+        reminders.append(("Battery", "Battery voltage is low. Run battery health diagnostics.", str(date.today() + timedelta(days=10))))
+    if values.get("brake_pad_thickness", 99) < 4.0:
+        reminders.append(("Brake", "Brake pad thickness below safety margin. Schedule inspection.", str(date.today() + timedelta(days=5))))
+    if values.get("oil_temp", 0) > 110:
+        reminders.append(("Cooling/Oil", "Oil temperature elevated. Inspect oil and cooling system.", str(date.today() + timedelta(days=5))))
+
+    if not reminders:
+        return
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+    for reminder_type, reminder_message, due_date in reminders:
+        cur.execute(
+            """
+            INSERT INTO reminders (user_id, vehicle_id, reminder_type, reminder_message, due_date, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, vehicle_id, reminder_type, reminder_message, due_date, "pending"),
+        )
+    conn.commit()
+    conn.close()
+
+
+def local_api_request(method, endpoint, payload=None, params=None):
+    payload = payload or {}
+    params = params or {}
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    try:
+        if method == "POST" and endpoint == "/register":
+            email = payload.get("email", "").strip().lower()
+            registration = payload.get("vehicle_registration_number", "").strip().upper()
+
+            cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+            existing_email = cur.fetchone()
+            cur.execute("SELECT id FROM vehicles WHERE registration_number = ?", (registration,))
+            existing_registration = cur.fetchone()
+
+            if existing_email or existing_registration:
+                return None, "User already exists with this email or vehicle registration number."
+
+            now_str = datetime.utcnow().isoformat()
+            cur.execute(
+                "INSERT INTO users (full_name, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                (payload.get("full_name", ""), email, hash_password(payload.get("password", "")), now_str),
+            )
+            user_id = cur.lastrowid
+            cur.execute(
+                """
+                INSERT INTO vehicles (user_id, registration_number, bmw_model, mileage, vehicle_age, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, registration, payload.get("bmw_model", "BMW 3 Series"), 0, 0, now_str),
+            )
+            vehicle_id = cur.lastrowid
+            conn.commit()
+            return {"message": "Registration successful", "user_id": user_id, "vehicle_id": vehicle_id}, None
+
+        if method == "POST" and endpoint == "/login":
+            identifier = payload.get("identifier", "").strip()
+            cur.execute(
+                """
+                SELECT u.id AS user_id, u.full_name, u.password_hash, v.id AS vehicle_id
+                FROM users u
+                LEFT JOIN vehicles v ON v.user_id = u.id
+                WHERE u.email = ? OR v.registration_number = ?
+                LIMIT 1
+                """,
+                (identifier.lower(), identifier.upper()),
+            )
+            row = cur.fetchone()
+            if row is None or not verify_password(payload.get("password", ""), row["password_hash"]):
+                return None, "Invalid credentials"
+            return {
+                "message": "Login successful",
+                "user_id": row["user_id"],
+                "full_name": row["full_name"],
+                "vehicle_id": row["vehicle_id"],
+            }, None
+
+        if method == "GET" and endpoint == "/user/profile":
+            user_id = int(params.get("user_id", 0))
+            cur.execute(
+                """
+                SELECT u.id, u.full_name, u.email, u.created_at,
+                       v.id AS vehicle_id, v.registration_number, v.bmw_model, v.mileage, v.vehicle_age
+                FROM users u
+                LEFT JOIN vehicles v ON v.user_id = u.id
+                WHERE u.id = ?
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None, "User not found"
+            return dict(row), None
+
+        if method == "POST" and endpoint == "/vehicles/update":
+            user_id = int(params.get("user_id", 0))
+            cur.execute("SELECT id FROM vehicles WHERE user_id = ? LIMIT 1", (user_id,))
+            row = cur.fetchone()
+            if row is None:
+                return None, "Vehicle not found"
+            cur.execute(
+                "UPDATE vehicles SET mileage = ?, vehicle_age = ? WHERE user_id = ?",
+                (int(payload.get("mileage", 0)), int(payload.get("vehicle_age", 0)), user_id),
+            )
+            conn.commit()
+            return {"message": "Vehicle profile updated", "vehicle_id": row["id"]}, None
+
+        if method == "POST" and endpoint == "/diagnostics/predict":
+            values = payload.copy()
+            user_id = int(values.get("user_id", 0))
+            vehicle_id = int(values.get("vehicle_id", 0))
+
+            cur.execute("SELECT bmw_model FROM vehicles WHERE id = ? LIMIT 1", (vehicle_id,))
+            row = cur.fetchone()
+            selected_model = row["bmw_model"] if row else "BMW 3 Series"
+            thresholds = MODEL_THRESHOLDS.get(selected_model, MODEL_THRESHOLDS["BMW 3 Series"])
+
+            model = load_model()
+            vehicle_data = pd.DataFrame([{
+                "mileage": values["mileage"],
+                "vehicle_age": values["vehicle_age"],
+                "engine_temp": values["engine_temp"],
+                "oil_temp": values["oil_temp"],
+                "battery_voltage": values["battery_voltage"],
+                "tyre_pressure": values["tyre_pressure"],
+                "brake_pad_thickness": values["brake_pad_thickness"],
+                "vibration_level": values["vibration_level"],
+                "fuel_efficiency": values["fuel_efficiency"],
+                "last_service_km": values["last_service_km"],
+                "engine_rpm": values["engine_rpm"],
+                "coolant_temp": values["coolant_temp"],
+                "oil_pressure": values["oil_pressure"],
+                "brake_sensor": values["brake_sensor"],
+                "battery_soh": values["battery_soh"],
+                "driving_behavior_score": values["driving_behavior_score"],
+                "road_condition_score": values["road_condition_score"],
+                "weather_impact_score": values["weather_impact_score"],
+                "maintenance_history_score": values["maintenance_history_score"],
+            }])
+            prediction = model.predict(vehicle_data)[0]
+            probability_table_df = format_probability_table(model, vehicle_data)
+            health_score = calculate_health_score(values, thresholds)
+            risk_level = calculate_risk_level(health_score)
+            recommendations = get_recommendations(prediction, values, thresholds)
+            explanation = " ".join(get_engineering_explanation(prediction, values, thresholds))
+
+            days_to_failure = calculate_days_to_failure(prediction, values, thresholds)
+            if days_to_failure is None:
+                failure_window = "90-180 days"
+            else:
+                failure_window = f"{max(1, days_to_failure - 14)}-{days_to_failure} days"
+
+            now_str = datetime.utcnow().isoformat()
+            cur.execute(
+                """
+                INSERT INTO diagnostic_records (
+                    user_id, vehicle_id, mileage, engine_temp, oil_temp, battery_voltage,
+                    tyre_pressure, brake_pad_thickness, vibration_level, fuel_efficiency,
+                    last_service_km, predicted_fault, health_score, risk_level, recommendation, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user_id,
+                    vehicle_id,
+                    int(values["mileage"]),
+                    float(values["engine_temp"]),
+                    float(values["oil_temp"]),
+                    float(values["battery_voltage"]),
+                    float(values["tyre_pressure"]),
+                    float(values["brake_pad_thickness"]),
+                    float(values["vibration_level"]),
+                    float(values["fuel_efficiency"]),
+                    int(values["last_service_km"]),
+                    prediction,
+                    int(health_score),
+                    risk_level,
+                    "; ".join(recommendations),
+                    now_str,
+                ),
+            )
+            record_id = cur.lastrowid
+            conn.commit()
+
+            create_reminders_from_values(user_id, vehicle_id, values)
+
+            probability_rows = []
+            for _, row_item in probability_table_df.iterrows():
+                probability_rows.append(
+                    {
+                        "fault_type": row_item["Fault Type"],
+                        "probability": float(row_item["Probability"]),
+                        "probability_percent": round(float(row_item["Probability"]) * 100, 2),
+                    }
+                )
+
+            return {
+                "predicted_fault": prediction,
+                "predicted_probability": round(float(probability_rows[0]["probability_percent"]), 2),
+                "health_score": health_score,
+                "risk_level": risk_level,
+                "estimated_failure_window": failure_window,
+                "explanation": explanation,
+                "recommendations": recommendations,
+                "probability_table": probability_rows,
+                "record_id": record_id,
+            }, None
+
+        if method == "GET" and endpoint.startswith("/diagnostics/history/"):
+            user_id = int(endpoint.split("/")[-1])
+            cur.execute(
+                """
+                SELECT id, mileage, engine_temp, oil_temp, battery_voltage, tyre_pressure,
+                       brake_pad_thickness, vibration_level, fuel_efficiency, last_service_km,
+                       predicted_fault, health_score, risk_level, recommendation, created_at
+                FROM diagnostic_records
+                WHERE user_id = ?
+                ORDER BY datetime(created_at) DESC
+                """,
+                (user_id,),
+            )
+            rows = cur.fetchall()
+            return [dict(r) for r in rows], None
+
+        if method == "GET" and endpoint.startswith("/reminders/"):
+            user_id = int(endpoint.split("/")[-1])
+            cur.execute(
+                """
+                SELECT id, reminder_type, reminder_message, due_date, status
+                FROM reminders
+                WHERE user_id = ?
+                ORDER BY id DESC
+                """,
+                (user_id,),
+            )
+            rows = cur.fetchall()
+            return [dict(r) for r in rows], None
+
+        if method == "POST" and endpoint == "/reminders/create":
+            cur.execute(
+                """
+                INSERT INTO reminders (user_id, vehicle_id, reminder_type, reminder_message, due_date, status)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    int(payload.get("user_id", 0)),
+                    int(payload.get("vehicle_id", 0)),
+                    payload.get("reminder_type", "General"),
+                    payload.get("reminder_message", ""),
+                    payload.get("due_date", str(date.today())),
+                    payload.get("status", "pending"),
+                ),
+            )
+            reminder_id = cur.lastrowid
+            conn.commit()
+            return {"id": reminder_id, "message": "Reminder created"}, None
+
+        return None, f"Unsupported local endpoint: {method} {endpoint}"
     except Exception as exc:
         return None, str(exc)
+    finally:
+        conn.close()
+
+
+def api_request(method, endpoint, payload=None, params=None):
+    # Streamlit Cloud deployment uses direct SQLite handlers in-app.
+    # FastAPI remains in the repository for local full-stack demonstration.
+    return local_api_request(method, endpoint, payload=payload, params=params)
 
 
 def load_profile_from_api():
