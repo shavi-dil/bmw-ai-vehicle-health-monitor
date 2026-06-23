@@ -4,3 +4,11 @@ numpy
 scikit-learn
 joblib
 plotly
+fastapi
+uvicorn
+sqlalchemy
+passlib[bcrypt]
+python-multipart
+opencv-python
+pillow
+requests
