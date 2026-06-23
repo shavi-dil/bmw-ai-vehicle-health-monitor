@@ -9,6 +9,6 @@ uvicorn
 sqlalchemy
 passlib[bcrypt]
 python-multipart
-opencv-python
+opencv-python-headless
 pillow
 requests
