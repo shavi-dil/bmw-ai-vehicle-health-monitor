@@ -7,3 +7,6 @@ plotly
 opencv-python-headless
 pillow
 matplotlib
+supabase
+psycopg2-binary
+python-dotenv

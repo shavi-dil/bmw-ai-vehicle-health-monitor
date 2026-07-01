@@ -2,10 +2,14 @@ import pandas as pd
 import joblib
 import plotly.graph_objects as go
 import streamlit as st
-import sqlite3
 import hashlib
 import hmac
+import os
 import secrets
+from dotenv import load_dotenv
+import psycopg2
+from psycopg2.extras import Json, RealDictCursor
+from supabase import create_client
 from datetime import date, datetime, timedelta
 from PIL import Image
 
@@ -16,6 +20,9 @@ from cv_prototype.image_processing import (
 from utils.damage_detection import run_damage_detection
 from utils.driving_behaviour import evaluate_driving_behaviour
 from utils.ev_battery import predict_ev_health
+
+
+load_dotenv()
 
 
 MODEL_THRESHOLDS = {
@@ -238,60 +245,110 @@ def load_model():
 
 
 def init_session_state():
-    init_local_db()
     defaults = {
         "logged_in": False,
         "user_id": None,
         "vehicle_id": None,
         "full_name": "",
         "user_profile": None,
+        "db_ready": False,
+        "db_error": "",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
+    try:
+        init_supabase_db()
+        st.session_state["db_ready"] = True
+        st.session_state["db_error"] = ""
+    except Exception as exc:
+        st.session_state["db_ready"] = False
+        st.session_state["db_error"] = str(exc)
+        st.session_state["logged_in"] = False
+
+
+def get_secret(name: str, default: str = "") -> str:
+    value = st.secrets.get(name)
+    if value is None:
+        value = os.getenv(name)
+    return str(value) if value is not None else default
+
+
+@st.cache_resource
+def get_supabase_settings():
+    database_url = get_secret("SUPABASE_DB_URL") or get_secret("DATABASE_URL")
+    supabase_url = get_secret("SUPABASE_URL")
+    supabase_anon_key = get_secret("SUPABASE_ANON_KEY")
+    return {
+        "database_url": database_url,
+        "supabase_url": supabase_url,
+        "supabase_anon_key": supabase_anon_key,
+    }
+
+
+@st.cache_resource
+def get_supabase_client():
+    settings = get_supabase_settings()
+    if not settings["supabase_url"] or not settings["supabase_anon_key"]:
+        return None
+    return create_client(settings["supabase_url"], settings["supabase_anon_key"])
+
+
+def show_supabase_setup_message():
+    st.error("Supabase credentials are missing. Configure Streamlit secrets to enable Register/Login and data persistence.")
+    st.code(
+    '''# .streamlit/secrets.toml
+SUPABASE_DB_URL = "postgresql://postgres:<password>@<host>:5432/postgres"
+SUPABASE_URL = "https://<project-ref>.supabase.co"
+SUPABASE_ANON_KEY = "<public-anon-key>"'''.strip(),
+        language="toml",
+    )
+    st.caption("Admin data access is handled through Supabase dashboard only.")
+    st.caption("The public Streamlit app does not expose admin login.")
+
 
 def get_db_connection():
-    conn = sqlite3.connect("bmw_health.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+    settings = get_supabase_settings()
+    database_url = settings["database_url"]
+    if not database_url:
+        raise RuntimeError("Missing SUPABASE_DB_URL (or DATABASE_URL) in environment/secrets.")
+    return psycopg2.connect(database_url, cursor_factory=RealDictCursor)
 
 
-def init_local_db():
+def init_supabase_db():
     conn = get_db_connection()
     cur = conn.cursor()
-
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id BIGSERIAL PRIMARY KEY,
             full_name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TIMESTAMPTZ NOT NULL
         )
         """
     )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS vehicles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             registration_number TEXT UNIQUE NOT NULL,
             bmw_model TEXT NOT NULL,
             mileage INTEGER DEFAULT 0,
             vehicle_age INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id)
+            created_at TIMESTAMPTZ NOT NULL
         )
         """
     )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS diagnostic_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            vehicle_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            vehicle_id BIGINT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
             mileage INTEGER NOT NULL,
             engine_temp REAL NOT NULL,
             oil_temp REAL NOT NULL,
@@ -304,29 +361,30 @@ def init_local_db():
             predicted_fault TEXT NOT NULL,
             health_score INTEGER NOT NULL,
             risk_level TEXT NOT NULL,
+            predicted_probability REAL,
             recommendation TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(vehicle_id) REFERENCES vehicles(id)
+            sensor_payload JSONB,
+            created_at TIMESTAMPTZ NOT NULL
         )
         """
     )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS reminders (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            vehicle_id INTEGER NOT NULL,
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            vehicle_id BIGINT NOT NULL REFERENCES vehicles(id) ON DELETE CASCADE,
             reminder_type TEXT NOT NULL,
             reminder_message TEXT NOT NULL,
-            due_date TEXT NOT NULL,
+            due_date DATE NOT NULL,
             status TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(vehicle_id) REFERENCES vehicles(id)
+            created_at TIMESTAMPTZ NOT NULL
         )
         """
     )
-
+    cur.execute("ALTER TABLE diagnostic_records ADD COLUMN IF NOT EXISTS predicted_probability REAL")
+    cur.execute("ALTER TABLE diagnostic_records ADD COLUMN IF NOT EXISTS sensor_payload JSONB")
+    cur.execute("ALTER TABLE reminders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ")
     conn.commit()
     conn.close()
 
@@ -362,13 +420,14 @@ def create_reminders_from_values(user_id, vehicle_id, values):
 
     conn = get_db_connection()
     cur = conn.cursor()
+    now_ts = datetime.utcnow()
     for reminder_type, reminder_message, due_date in reminders:
         cur.execute(
             """
-            INSERT INTO reminders (user_id, vehicle_id, reminder_type, reminder_message, due_date, status)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO reminders (user_id, vehicle_id, reminder_type, reminder_message, due_date, status, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
-            (user_id, vehicle_id, reminder_type, reminder_message, due_date, "pending"),
+            (user_id, vehicle_id, reminder_type, reminder_message, due_date, "pending", now_ts),
         )
     conn.commit()
     conn.close()
@@ -385,9 +444,9 @@ def local_api_request(method, endpoint, payload=None, params=None):
             email = payload.get("email", "").strip().lower()
             registration = payload.get("vehicle_registration_number", "").strip().upper()
 
-            cur.execute("SELECT id FROM users WHERE email = ?", (email,))
+            cur.execute("SELECT id FROM users WHERE lower(email) = %s", (email,))
             existing_email = cur.fetchone()
-            cur.execute("SELECT id FROM vehicles WHERE registration_number = ?", (registration,))
+            cur.execute("SELECT id FROM vehicles WHERE upper(registration_number) = %s", (registration,))
             existing_registration = cur.fetchone()
 
             if existing_email or existing_registration:
@@ -395,18 +454,23 @@ def local_api_request(method, endpoint, payload=None, params=None):
 
             now_str = datetime.utcnow().isoformat()
             cur.execute(
-                "INSERT INTO users (full_name, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                """
+                INSERT INTO users (full_name, email, password_hash, created_at)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+                """,
                 (payload.get("full_name", ""), email, hash_password(payload.get("password", "")), now_str),
             )
-            user_id = cur.lastrowid
+            user_id = int(cur.fetchone()["id"])
             cur.execute(
                 """
                 INSERT INTO vehicles (user_id, registration_number, bmw_model, mileage, vehicle_age, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id
                 """,
                 (user_id, registration, payload.get("bmw_model", "BMW 3 Series"), 0, 0, now_str),
             )
-            vehicle_id = cur.lastrowid
+            vehicle_id = int(cur.fetchone()["id"])
             conn.commit()
             return {"message": "Registration successful", "user_id": user_id, "vehicle_id": vehicle_id}, None
 
@@ -417,13 +481,13 @@ def local_api_request(method, endpoint, payload=None, params=None):
                 SELECT u.id AS user_id, u.full_name, u.password_hash, v.id AS vehicle_id
                 FROM users u
                 LEFT JOIN vehicles v ON v.user_id = u.id
-                WHERE u.email = ? OR v.registration_number = ?
+                WHERE lower(u.email) = lower(%s) OR upper(v.registration_number) = upper(%s)
                 LIMIT 1
                 """,
                 (identifier.lower(), identifier.upper()),
             )
             row = cur.fetchone()
-            if row is None or not verify_password(payload.get("password", ""), row["password_hash"]):
+            if row is None or not verify_password(payload.get("password", ""), row.get("password_hash", "")):
                 return None, "Invalid credentials"
             return {
                 "message": "Login successful",
@@ -440,7 +504,7 @@ def local_api_request(method, endpoint, payload=None, params=None):
                        v.id AS vehicle_id, v.registration_number, v.bmw_model, v.mileage, v.vehicle_age
                 FROM users u
                 LEFT JOIN vehicles v ON v.user_id = u.id
-                WHERE u.id = ?
+                  WHERE u.id = %s
                 LIMIT 1
                 """,
                 (user_id,),
@@ -452,12 +516,12 @@ def local_api_request(method, endpoint, payload=None, params=None):
 
         if method == "POST" and endpoint == "/vehicles/update":
             user_id = int(params.get("user_id", 0))
-            cur.execute("SELECT id FROM vehicles WHERE user_id = ? LIMIT 1", (user_id,))
+            cur.execute("SELECT id FROM vehicles WHERE user_id = %s LIMIT 1", (user_id,))
             row = cur.fetchone()
             if row is None:
                 return None, "Vehicle not found"
             cur.execute(
-                "UPDATE vehicles SET mileage = ?, vehicle_age = ? WHERE user_id = ?",
+                "UPDATE vehicles SET mileage = %s, vehicle_age = %s WHERE user_id = %s",
                 (int(payload.get("mileage", 0)), int(payload.get("vehicle_age", 0)), user_id),
             )
             conn.commit()
@@ -468,9 +532,9 @@ def local_api_request(method, endpoint, payload=None, params=None):
             user_id = int(values.get("user_id", 0))
             vehicle_id = int(values.get("vehicle_id", 0))
 
-            cur.execute("SELECT bmw_model FROM vehicles WHERE id = ? LIMIT 1", (vehicle_id,))
+            cur.execute("SELECT bmw_model FROM vehicles WHERE id = %s LIMIT 1", (vehicle_id,))
             row = cur.fetchone()
-            selected_model = row["bmw_model"] if row else "BMW 3 Series"
+            selected_model = row["bmw_model"] if row is not None else "BMW 3 Series"
             thresholds = MODEL_THRESHOLDS.get(selected_model, MODEL_THRESHOLDS["BMW 3 Series"])
 
             model = load_model()
@@ -501,6 +565,7 @@ def local_api_request(method, endpoint, payload=None, params=None):
             risk_level = calculate_risk_level(health_score)
             recommendations = get_recommendations(prediction, values, thresholds)
             explanation = " ".join(get_engineering_explanation(prediction, values, thresholds))
+            failure_prob = float(probability_table_df.iloc[0]["Probability"] * 100)
 
             days_to_failure = calculate_days_to_failure(prediction, values, thresholds)
             if days_to_failure is None:
@@ -514,8 +579,10 @@ def local_api_request(method, endpoint, payload=None, params=None):
                 INSERT INTO diagnostic_records (
                     user_id, vehicle_id, mileage, engine_temp, oil_temp, battery_voltage,
                     tyre_pressure, brake_pad_thickness, vibration_level, fuel_efficiency,
-                    last_service_km, predicted_fault, health_score, risk_level, recommendation, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    last_service_km, predicted_fault, health_score, risk_level, predicted_probability,
+                    recommendation, sensor_payload, created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
                 """,
                 (
                     user_id,
@@ -532,11 +599,13 @@ def local_api_request(method, endpoint, payload=None, params=None):
                     prediction,
                     int(health_score),
                     risk_level,
+                    failure_prob,
                     "; ".join(recommendations),
+                    Json(values),
                     now_str,
                 ),
             )
-            record_id = cur.lastrowid
+            record_id = int(cur.fetchone()["id"])
             conn.commit()
 
             create_reminders_from_values(user_id, vehicle_id, values)
@@ -569,15 +638,15 @@ def local_api_request(method, endpoint, payload=None, params=None):
                 """
                 SELECT id, mileage, engine_temp, oil_temp, battery_voltage, tyre_pressure,
                        brake_pad_thickness, vibration_level, fuel_efficiency, last_service_km,
-                       predicted_fault, health_score, risk_level, recommendation, created_at
+                       predicted_fault, health_score, risk_level, predicted_probability, recommendation, created_at
                 FROM diagnostic_records
-                WHERE user_id = ?
-                ORDER BY datetime(created_at) DESC
+                WHERE user_id = %s
+                ORDER BY created_at DESC
                 """,
                 (user_id,),
             )
             rows = cur.fetchall()
-            return [dict(r) for r in rows], None
+            return rows, None
 
         if method == "GET" and endpoint.startswith("/reminders/"):
             user_id = int(endpoint.split("/")[-1])
@@ -585,19 +654,20 @@ def local_api_request(method, endpoint, payload=None, params=None):
                 """
                 SELECT id, reminder_type, reminder_message, due_date, status
                 FROM reminders
-                WHERE user_id = ?
-                ORDER BY id DESC
+                WHERE user_id = %s
+                ORDER BY created_at DESC NULLS LAST, id DESC
                 """,
                 (user_id,),
             )
             rows = cur.fetchall()
-            return [dict(r) for r in rows], None
+            return rows, None
 
         if method == "POST" and endpoint == "/reminders/create":
             cur.execute(
                 """
-                INSERT INTO reminders (user_id, vehicle_id, reminder_type, reminder_message, due_date, status)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO reminders (user_id, vehicle_id, reminder_type, reminder_message, due_date, status, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
                 """,
                 (
                     int(payload.get("user_id", 0)),
@@ -606,9 +676,10 @@ def local_api_request(method, endpoint, payload=None, params=None):
                     payload.get("reminder_message", ""),
                     payload.get("due_date", str(date.today())),
                     payload.get("status", "pending"),
+                    datetime.utcnow().isoformat(),
                 ),
             )
-            reminder_id = cur.lastrowid
+            reminder_id = int(cur.fetchone()["id"])
             conn.commit()
             return {"id": reminder_id, "message": "Reminder created"}, None
 
@@ -620,8 +691,12 @@ def local_api_request(method, endpoint, payload=None, params=None):
 
 
 def api_request(method, endpoint, payload=None, params=None):
-    # Streamlit Cloud deployment uses direct SQLite handlers in-app.
-    # FastAPI remains in the repository for local full-stack demonstration.
+    # Admin data access is handled through Supabase dashboard only.
+    # The public Streamlit app does not expose admin login.
+    if not st.session_state.get("db_ready"):
+        return None, "Supabase is not configured. Please set SUPABASE_DB_URL, SUPABASE_URL, and SUPABASE_ANON_KEY in Streamlit secrets."
+
+    _ = get_supabase_client()
     return local_api_request(method, endpoint, payload=payload, params=params)
 
 
@@ -921,21 +996,13 @@ def format_probability_table(model, vehicle_data):
 
 def render_auth_page():
     st.markdown("## Account Access")
-    st.caption("Use Login/Register for full persistence features, or continue in guest mode for local diagnostics.")
+    st.caption("Register or login to continue. Admin access is available only in the Supabase dashboard.")
 
-    if st.button("Continue as Guest (Local Diagnostic Mode)"):
-        st.session_state["logged_in"] = True
-        st.session_state["user_id"] = 0
-        st.session_state["vehicle_id"] = 0
-        st.session_state["full_name"] = "Guest User"
-        st.session_state["user_profile"] = {
-            "full_name": "Guest User",
-            "bmw_model": "BMW 3 Series",
-            "registration_number": "GUEST-LOCAL",
-            "mileage": 50000,
-            "vehicle_age": 5,
-        }
-        st.rerun()
+    if not st.session_state.get("db_ready"):
+        show_supabase_setup_message()
+        if st.session_state.get("db_error"):
+            st.caption(f"Connection detail: {st.session_state['db_error']}")
+        return
 
     tab_login, tab_register = st.tabs(["Login", "Register"])
 
