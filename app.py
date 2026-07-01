@@ -1100,7 +1100,8 @@ def render_ai_damage_detection_page():
         st.warning("Computer Vision prototype is unavailable in this deployment environment.")
         return
 
-    uploaded = st.file_uploader("Upload vehicle image for damage analysis", type=["jpg", "jpeg", "png"], key="damage_upload")
+    st.markdown("### Upload Vehicle Photo")
+    uploaded = st.file_uploader("Upload Vehicle Photo", type=["jpg", "jpeg", "png"], key="damage_upload")
     if not uploaded:
         return
 
@@ -1108,13 +1109,15 @@ def render_ai_damage_detection_page():
     original, processed, yolo_output, detections, yolo_used, assessment = run_damage_detection(image)
 
     col1, col2 = st.columns(2)
-    col1.image(original, caption="Uploaded Image", use_container_width=True)
-    col2.image(processed, caption="Processed Image (Edges/Contours)", use_container_width=True)
+    col1.image(original, caption="Uploaded Vehicle Photo", use_container_width=True)
+    col2.image(processed, caption="Processed Diagnostic View", use_container_width=True)
 
-    st.image(yolo_output, caption="YOLO Detection Output", use_container_width=True)
+    st.markdown("### YOLO Damage Detection")
+    st.image(yolo_output, caption="Annotated Image", use_container_width=True)
 
     if yolo_used and detections:
         st.success(f"YOLO detections found: {len(detections)} object(s)")
+        st.markdown("### Confidence Scores")
         for item in detections[:8]:
             st.write(f"- {item.label} ({item.confidence:.2f})")
     elif yolo_used:
@@ -1126,6 +1129,10 @@ def render_ai_damage_detection_page():
     risk_col, issue_col = st.columns(2)
     risk_col.metric("Damage Risk Score", f"{assessment.risk_score}/100")
     issue_col.metric("Possible Issue", assessment.possible_issue)
+    base_repair_cost = 220 + int(assessment.risk_score * 42)
+    if detections:
+        base_repair_cost += int(len(detections) * 95)
+    st.metric("Estimated Repair Cost", f"${base_repair_cost} - ${int(base_repair_cost * 1.28)}")
     st.write(f"Recommendation: {assessment.recommendation}")
 
 
@@ -1167,7 +1174,7 @@ def render_ev_battery_ai_page():
 
 
 def render_driving_behaviour_ai_page():
-    st.markdown("## Driving Behaviour AI")
+    st.markdown("## Driving Analytics")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -1178,7 +1185,7 @@ def render_driving_behaviour_ai_page():
     with col2:
         weekly_distance = st.number_input("Weekly Distance (km)", 0.0, 2500.0, 350.0)
         night_driving = st.slider("Night Driving Frequency (%)", 0.0, 100.0, 28.0)
-        fuel_efficiency = st.number_input("Fuel Efficiency", 2.0, 25.0, 8.0)
+        fuel_efficiency = st.number_input("Actual Fuel Economy (L/100 km)", 2.0, 25.0, 8.0)
 
     if st.button("Run Driving Behaviour AI"):
         inputs = {
@@ -1193,13 +1200,19 @@ def render_driving_behaviour_ai_page():
         result = evaluate_driving_behaviour(inputs)
 
         s1, s2, s3 = st.columns(3)
-        s1.metric("Driving Safety Score", f"{result['driving_safety_score']}/100")
+        s1.metric("Driving Safety Rating", f"{result['driving_safety_score']}/100")
         s2.metric("Risk Level", result["risk_level"])
         s3.metric("Main Factors", result["main_factors"])
 
         i1, i2 = st.columns(2)
         i1.metric("Brake Wear Impact", result["brake_wear_impact"])
-        i2.metric("Fuel Efficiency Impact", result["fuel_efficiency_impact"])
+        i2.metric("Eco Driving Score", result["fuel_efficiency_impact"])
+
+        weekly_report = (
+            f"Weekly report: {weekly_distance:.0f} km, "
+            f"{harsh_braking} harsh braking events, {harsh_accel} rapid accelerations."
+        )
+        st.info(weekly_report)
 
         st.write(f"Recommendation: {result['recommendation']}")
 
@@ -1430,45 +1443,95 @@ def render_ai_diagnostic_page():
     st.sidebar.write(f"Brake pad thickness: {thresholds['brake_pad_thickness']} mm")
     st.sidebar.write(f"Brake sensor: {thresholds['brake_sensor']}%")
 
-    input_col, status_col = st.columns([1.15, 0.85])
+    input_col, status_col = st.columns([1.25, 0.75])
     with input_col:
-        st.markdown('<div class="section-label">Vehicle Sensor Inputs</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-label">Driver Information</div>', unsafe_allow_html=True)
+        d1, d2, d3 = st.columns(3)
+        with d1:
+            vehicle_speed = st.slider("Vehicle Speed (km/h)", 0, 260, 82)
+            engine_rpm = st.slider("Engine RPM", 500, 6500, 2200)
+            fuel_level = st.slider("Fuel Level (%)", 0, 100, 58)
+        with d2:
+            remaining_range = st.number_input("Remaining Range (km)", 0, 1200, 430)
+            drive_mode = st.selectbox("Drive Mode", ["Eco Pro", "Comfort", "Sport", "Sport+"])
+            tyre_pressure = st.slider("Tyre Pressure", 20.0, 45.0, 34.0)
+        with d3:
+            outside_temp = st.slider("Outside Temperature (°C)", -20, 55, 24)
+            service_due_km = st.number_input("Service Due in km", 0, 30000, 4500)
+            odometer_km = st.number_input("Odometer (km)", 0, 450000, int(profile.get("mileage") or 50000))
 
-        mileage = st.number_input("Mileage", 0, 300000, int(profile.get("mileage") or 50000))
+        st.markdown('<div class="section-label">Vehicle Health</div>', unsafe_allow_html=True)
+        h1, h2, h3, h4 = st.columns(4)
+        with h1:
+            engine_temp = st.slider("Engine Temperature (°C)", 60, 130, 92)
+            oil_temp = st.slider("Oil Temperature (°C)", 60, 145, 98)
+        with h2:
+            oil_pressure = st.slider("Oil Pressure (bar)", 1.0, 6.0, 3.4)
+            coolant_temp = st.slider("Coolant Temperature (°C)", 60, 130, 90)
+        with h3:
+            battery_voltage = st.slider("Battery Voltage (V)", 10.0, 15.0, 12.4)
+            battery_soh = st.slider("Battery State of Health (%)", 40, 100, 87)
+        with h4:
+            brake_pad_wear = st.slider("Brake Pad Wear (%)", 0, 100, 36)
+            transmission_temp = st.slider("Transmission Temperature (°C)", 45, 150, 86)
+
+        actual_fuel_economy = st.number_input("Actual Fuel Economy in L/100 km", 3.0, 20.0, 7.6)
+
+        st.markdown('<div class="section-label">Driving Analytics</div>', unsafe_allow_html=True)
+        a1, a2, a3 = st.columns(3)
+        with a1:
+            driving_safety_rating = st.slider("Driving Safety Rating", 0, 100, 81)
+            harsh_braking_events = st.number_input("Harsh Braking Events", 0, 200, 8)
+        with a2:
+            rapid_acceleration_events = st.number_input("Rapid Acceleration Events", 0, 200, 7)
+            eco_driving_score = st.slider("Eco Driving Score", 0, 100, 78)
+        with a3:
+            weekly_driving_distance = st.number_input("Weekly Driving Report (km)", 0.0, 3000.0, 360.0)
+
+        mileage = int(odometer_km)
         vehicle_age = st.number_input("Vehicle Age", 0, 20, int(profile.get("vehicle_age") or 5))
 
-        left, right = st.columns(2)
-        with left:
-            engine_temp = st.slider("Engine Temperature", 60, 130, 90)
-            battery_voltage = st.slider("Battery Voltage", 10.0, 15.0, 12.4)
-            brake_pad_thickness = st.slider("Brake Pad Thickness", 1.0, 12.0, 7.0)
-            fuel_efficiency = st.slider("Fuel Efficiency", 3.0, 15.0, 7.5)
-        with right:
-            oil_temp = st.slider("Oil Temperature", 60, 140, 95)
-            tyre_pressure = st.slider("Tyre Pressure", 20.0, 45.0, 34.0)
-            vibration_level = st.slider("Vibration Level", 0.0, 10.0, 2.5)
-            last_service_km = st.number_input("Distance Since Last Service", 0, 50000, 10000)
+        service_interval_km = int(thresholds["last_service_km"])
+        last_service_km = int(max(0, min(50000, service_interval_km - int(service_due_km))))
+        fuel_efficiency = float(actual_fuel_economy)
+        brake_pad_thickness = float(max(1.0, round(12.0 - (brake_pad_wear * 0.1), 1)))
+        brake_sensor = int(max(0, min(100, 100 - brake_pad_wear)))
+        vibration_level = round(
+            max(
+                0.3,
+                min(
+                    10.0,
+                    1.2
+                    + (vehicle_speed / 260.0) * 2.2
+                    + ((harsh_braking_events + rapid_acceleration_events) / 220.0) * 3.2
+                    + (max(0.0, 34.0 - tyre_pressure) * 0.1),
+                ),
+            ),
+            2,
+        )
 
-    with st.expander("🔍 Advanced Sensor Inputs — Version 2.0", expanded=False):
-        adv1, adv2, adv3 = st.columns(3)
-        with adv1:
-            engine_rpm = st.slider("Engine RPM", 500, 6000, 2500)
-            coolant_temp = st.slider("Coolant Temperature (°C)", 60, 130, 88)
-            oil_pressure = st.slider("Oil Pressure (bar)", 1.0, 6.0, 3.5)
-        with adv2:
-            brake_sensor = st.slider("Brake Wear Sensor (%)", 0, 100, 80)
-            battery_soh = st.slider("Battery State of Health (%)", 40, 100, 87)
-            driving_behavior_score = st.slider("Driving Behaviour Score", 0, 100, 75)
-        with adv3:
-            road_condition_score = st.slider("Road Condition Score", 0, 100, 70)
-            weather_impact_score = st.slider("Weather Impact Score", 0, 100, 75)
-            maintenance_history_score = st.slider("Maintenance History Score", 0, 100, 72)
+        behavior_base = (
+            driving_safety_rating * 0.5
+            + eco_driving_score * 0.3
+            + max(0, 100 - (harsh_braking_events + rapid_acceleration_events) * 3) * 0.2
+        )
+        driving_behavior_score = int(max(0, min(100, round(behavior_base))))
+        road_condition_score = int(max(35, min(100, round(100 - abs(float(tyre_pressure) - 34.0) * 6 - vibration_level * 4))))
+        weather_impact_score = int(max(30, min(100, round(100 - max(0, abs(outside_temp - 22) - 8) * 4))))
+        maintenance_history_score = int(
+            max(20, min(100, round(100 - (last_service_km / 220) - (brake_pad_wear * 0.25))))
+        )
 
     with status_col:
         st.markdown('<div class="section-label">System Profile</div>', unsafe_allow_html=True)
         st.metric("Selected BMW Model", selected_model)
         st.metric("Diagnostic Mode", "Predictive AI")
         st.metric("Model Status", "Loaded")
+        st.metric("Drive Mode", drive_mode)
+        st.metric("Fuel Level", f"{fuel_level}%")
+        st.metric("Remaining Range", f"{int(remaining_range)} km")
+        st.metric("Outside Temperature", f"{outside_temp} °C")
+        st.metric("Service Due", f"{int(service_due_km)} km")
 
     if st.button("Run AI Diagnostic"):
         values = {
@@ -1533,17 +1596,26 @@ def render_ai_diagnostic_page():
             if backend_error:
                 st.caption(f"Backend message: {backend_error}")
 
+        if health_score < 45 or failure_prob >= 80:
+            priority_level = "Critical"
+        elif risk.startswith("High") or failure_prob >= 60:
+            priority_level = "High"
+        elif risk.startswith("Medium") or failure_prob >= 35:
+            priority_level = "Medium"
+        else:
+            priority_level = "Low"
+
         st.markdown("---")
-        st.markdown("### AI Diagnostic Report")
+        st.markdown("### AI Diagnostics")
         card_a, card_b, card_c, card_d = st.columns(4)
         card_a.metric("Vehicle", selected_model)
-        card_b.metric("Health Score", f"{health_score}/100")
-        card_c.metric("Predicted Issue", prediction)
+        card_b.metric("Overall Health Score", f"{health_score}/100")
+        card_c.metric("Predicted Fault Category", prediction)
         card_d.metric("Failure Probability", f"{failure_prob:.0f}%")
 
         info_a, info_b = st.columns(2)
-        info_a.metric("Estimated Failure Window", estimated_failure_window)
-        info_b.metric("Risk Level", risk)
+        info_a.metric("Estimated Remaining Useful Life", estimated_failure_window)
+        info_b.metric("Priority Level", priority_level)
 
         action_col, reason_col = st.columns(2)
         with action_col:
@@ -1566,6 +1638,32 @@ def render_ai_diagnostic_page():
 
         display_prob = probability_table[["Fault Type", "Probability %"]] if "Fault Type" in probability_table.columns else probability_table
         st.dataframe(display_prob, hide_index=True, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("Driving Analytics")
+        da1, da2, da3, da4 = st.columns(4)
+        da1.metric("Driving Safety Rating", f"{driving_safety_rating}/100")
+        da2.metric("Harsh Braking Events", int(harsh_braking_events))
+        da3.metric("Rapid Acceleration Events", int(rapid_acceleration_events))
+        da4.metric("Eco Driving Score", f"{eco_driving_score}/100")
+        st.info(
+            "Weekly Driving Report: "
+            f"{weekly_driving_distance:.0f} km this week, "
+            f"{harsh_braking_events} harsh braking events, "
+            f"{rapid_acceleration_events} rapid acceleration events."
+        )
+
+        st.markdown("---")
+        st.subheader("Computer Vision")
+        st.write("Upload Vehicle Photo: Open AI Damage Detection from the sidebar.")
+        st.write("YOLO Damage Detection: Available in AI Damage Detection page.")
+        st.write("Annotated Image: Available in AI Damage Detection page.")
+        st.write("Confidence Scores: Available in AI Damage Detection page.")
+        if cv_prototype_available():
+            est_repair_cost = 180 + int((100 - health_score) * 45)
+            st.metric("Estimated Repair Cost", f"${est_repair_cost} - ${int(est_repair_cost * 1.25)}")
+        else:
+            st.warning("Computer Vision prototype is unavailable in this deployment environment.")
 
         st.markdown("---")
         g1, g2, g3 = st.columns(3)
@@ -1599,7 +1697,7 @@ else:
             "Reminders",
             "AI Damage Detection",
             "EV Battery AI",
-            "Driving Behaviour AI",
+            "Driving Analytics",
             "Computer Vision Prototype",
         ],
     )
@@ -1626,7 +1724,7 @@ else:
         render_ai_damage_detection_page()
     elif page == "EV Battery AI":
         render_ev_battery_ai_page()
-    elif page == "Driving Behaviour AI":
+    elif page == "Driving Analytics":
         render_driving_behaviour_ai_page()
     else:
         render_cv_prototype_page()

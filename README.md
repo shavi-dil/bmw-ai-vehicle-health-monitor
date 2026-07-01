@@ -4,6 +4,12 @@ An AI-powered predictive maintenance and vehicle health monitoring system for BM
 
 ## Features
 - BMW vehicle diagnostics
+- Realistic dashboard structure:
+	- Driver Information
+	- Vehicle Health
+	- AI Diagnostics
+	- Computer Vision Prototype
+	- Driving Analytics
 - AI fault prediction with probability outputs
 - Predictive maintenance and health scoring
 - Engineering recommendations and explainable reasoning
@@ -15,7 +21,7 @@ An AI-powered predictive maintenance and vehicle health monitoring system for BM
 - Computer Vision prototype (grayscale + edge detection)
 - AI Damage Detection page (YOLO prototype + OpenCV damage-risk assessment)
 - EV Battery AI page (SoH prediction, degradation risk, replacement window)
-- Driving Behaviour AI page (safety score, risk level, behavior insights)
+- Driving Analytics page (safety rating, event insights, weekly report)
 
 ## Technologies
 - Python
